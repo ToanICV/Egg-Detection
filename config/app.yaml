@@ -1,0 +1,32 @@
+camera:
+  device_index: 0
+  resolution: [640, 480]
+  fps: 25
+  reconnect_delay_ms: 2000
+
+yolo:
+  weights_path: "../weights/brown-egg.pt"
+  confidence_threshold: 0.4
+  iou_threshold: 0.5
+  device: "cpu"
+  max_det: 50
+
+serial:
+  port: "COM15"
+  baudrate: 115200
+  payload_format: "json"
+  reconnect_delay_ms: 2000
+
+logging:
+  level: "INFO"
+  filepath: "../logs/app.log"
+  max_bytes: 5242880
+  backup_count: 5
+  console: true
+
+app:
+  auto_start: false
+  ui_language: "vi"
+  frame_skip: 0
+  enable_overlay: true
+  overlay_frame_gap: 15
