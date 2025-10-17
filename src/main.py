@@ -58,11 +58,10 @@ def bootstrap(config: Config) -> None:
 
     window.start_requested.connect(controller.start)
     window.stop_requested.connect(controller.stop)
-    window.overlay_toggled.connect(window.video_widget.set_overlay_enabled)
 
     app.aboutToQuit.connect(controller.shutdown)
 
-    window.set_overlay_state(config.app.enable_overlay)
+    window.video_widget.set_overlay_enabled(config.app.enable_overlay)
 
     window.show()
 

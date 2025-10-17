@@ -6,7 +6,6 @@ from typing import Sequence
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
-    QCheckBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -26,7 +25,6 @@ class MainWindow(QMainWindow):
 
     start_requested = pyqtSignal()
     stop_requested = pyqtSignal()
-    overlay_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -34,8 +32,6 @@ class MainWindow(QMainWindow):
         self.video_widget = VideoWidget()
         self._start_button = QPushButton("Bắt đầu")
         self._stop_button = QPushButton("Dừng")
-        self._overlay_checkbox = QCheckBox("Hiển thị khung")
-        self._overlay_checkbox.setChecked(True)
         self._detection_label = QLabel("Số lượng: 0 | Thời gian: 0 ms")
         self._serial_label = QLabel("Serial: ngắt kết nối")
         self._log_view = QPlainTextEdit()
@@ -51,9 +47,12 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.video_widget, stretch=1)
 
         controls_layout = QHBoxLayout()
+        self._start_button.setMinimumHeight(48)
+        self._start_button.setStyleSheet("font-size: 16px; padding: 12px 32px;")
+        self._stop_button.setMinimumHeight(48)
+        self._stop_button.setStyleSheet("font-size: 16px; padding: 12px 32px;")
         controls_layout.addWidget(self._start_button)
         controls_layout.addWidget(self._stop_button)
-        controls_layout.addWidget(self._overlay_checkbox)
         controls_layout.addStretch(1)
         controls_layout.addWidget(self._detection_label)
         controls_layout.addWidget(self._serial_label)
@@ -69,9 +68,6 @@ class MainWindow(QMainWindow):
     def _wire_events(self) -> None:
         self._start_button.clicked.connect(self.start_requested.emit)
         self._stop_button.clicked.connect(self.stop_requested.emit)
-        self._overlay_checkbox.stateChanged.connect(
-            lambda state: self.overlay_toggled.emit(state == 2)
-        )
 
     def display_frame(self, frame: FrameData, detections: Sequence[Detection]) -> None:
         self.video_widget.update_frame(frame, detections)
@@ -89,6 +85,3 @@ class MainWindow(QMainWindow):
 
     def show_status_message(self, message: str, timeout_ms: int = 5000) -> None:
         self._status_bar.showMessage(message, timeout_ms)
-
-    def set_overlay_state(self, enabled: bool) -> None:
-        self._overlay_checkbox.setChecked(enabled)
