@@ -7,7 +7,7 @@ import logging
 import queue
 import threading
 import time
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 try:
     import serial
@@ -17,25 +17,25 @@ except ImportError as exc:  # pragma: no cover - dependency check
 from config.models import SerialConfig
 from core.entities import Detection, FrameData
 
-from PyQt5.QtCore import QObject, pyqtSignal
-
 logger = logging.getLogger("serial.sender")
 
 
-class SerialSender(QObject):
+class SerialSender:
     """Asynchronous serial sender for detection coordinates."""
 
-    sent = pyqtSignal(str)
-    error_occurred = pyqtSignal(str)
-    status_changed = pyqtSignal(bool)
-
-    def __init__(self, config: SerialConfig) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        config: SerialConfig,
+        on_error: Optional[Callable[[str], None]] = None,
+        on_status_change: Optional[Callable[[bool], None]] = None,
+    ) -> None:
         self._config = config
         self._queue: "queue.Queue[str]" = queue.Queue(maxsize=64)
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._serial: Optional[serial.Serial] = None
+        self._on_error = on_error
+        self._on_status_change = on_status_change
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -61,7 +61,7 @@ class SerialSender(QObject):
         except queue.Full:
             message = "Serial queue full; payload dropped."
             logger.warning(message)
-            self.error_occurred.emit(message)
+            self._notify_error(message)
 
     def _worker(self) -> None:
         reconnect_delay = self._config.reconnect_delay_ms / 1000.0
@@ -73,7 +73,7 @@ class SerialSender(QObject):
 
             if not self._ensure_port():
                 logger.error("Serial port unavailable; retrying in %.2f seconds", reconnect_delay)
-                self.error_occurred.emit("Cổng COM không khả dụng. Đang thử lại...")
+                self._notify_error("Serial port unavailable. Retrying...")
                 time.sleep(reconnect_delay)
                 self._requeue_payload(payload)
                 continue
@@ -83,10 +83,9 @@ class SerialSender(QObject):
                 self._serial.write(payload.encode("utf-8"))
                 self._serial.flush()
                 logger.debug("Sent payload: %s", payload.strip())
-                self.sent.emit(payload)
             except serial.SerialException as exc:
                 logger.error("Failed to write to serial port: %s", exc)
-                self.error_occurred.emit(f"Gửi dữ liệu thất bại: {exc}")
+                self._notify_error(f"Failed to send serial payload: {exc}")
                 self._close_port()
                 time.sleep(reconnect_delay)
                 self._requeue_payload(payload)
@@ -97,7 +96,7 @@ class SerialSender(QObject):
         except queue.Full:
             message = "Serial queue full; payload dropped."
             logger.warning(message)
-            self.error_occurred.emit(message)
+            self._notify_error(message)
 
     def _ensure_port(self) -> bool:
         if self._serial and self._serial.is_open:
@@ -112,11 +111,11 @@ class SerialSender(QObject):
                 timeout=self._config.timeout,
             )
             logger.info("Serial port %s opened", self._config.port)
-            self.status_changed.emit(True)
+            self._notify_status(True)
             return True
         except serial.SerialException as exc:
             logger.error("Unable to open serial port %s: %s", self._config.port, exc)
-            self.status_changed.emit(False)
+            self._notify_status(False)
             return False
 
     def _close_port(self) -> None:
@@ -124,7 +123,7 @@ class SerialSender(QObject):
             logger.info("Closing serial port %s", self._config.port)
             self._serial.close()
         self._serial = None
-        self.status_changed.emit(False)
+        self._notify_status(False)
 
     def _format_payload(self, detections: Iterable[Detection], frame: FrameData) -> str:
         detections_list = list(detections)
@@ -161,3 +160,17 @@ class SerialSender(QObject):
             }
             payload = json.dumps(payload_dict, separators=(",", ":")) + "\n"
         return payload
+
+    def _notify_error(self, message: str) -> None:
+        if self._on_error:
+            try:
+                self._on_error(message)
+            except Exception:  # pragma: no cover - user callback
+                logger.exception("Serial error callback failed.")
+
+    def _notify_status(self, status: bool) -> None:
+        if self._on_status_change:
+            try:
+                self._on_status_change(status)
+            except Exception:  # pragma: no cover - user callback
+                logger.exception("Serial status callback failed.")

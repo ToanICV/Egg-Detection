@@ -67,11 +67,7 @@ class LoggingConfig:
 class AppConfig:
     """Application level configuration."""
 
-    auto_start: bool = True
-    ui_language: str = "vi"
-    frame_skip: int = 0
     enable_overlay: bool = True
-    overlay_frame_gap: int = 10
 
 
 @dataclass(frozen=True)

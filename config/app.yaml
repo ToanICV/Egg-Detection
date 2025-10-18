@@ -25,8 +25,4 @@ logging:
   console: true
 
 app:
-  auto_start: true
-  ui_language: "vi"
-  frame_skip: 0
   enable_overlay: true
-  overlay_frame_gap: 15

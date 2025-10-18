@@ -1,131 +1,108 @@
-# Tổng Quan Hệ Thống Nhận Dạng Trứng
+# System Overview (OpenCV Edition)
 
-Tài liệu này mô tả kiến trúc, các mô-đun chính và luồng xử lý của ứng dụng nhận dạng trứng sử dụng PyQt5 và mô hình YOLOv11 (Ultralytics). Mục tiêu của kiến trúc là tách biệt rõ ràng từng trách nhiệm để dễ dàng bảo trì, mở rộng và thử nghiệm.
+This document describes the architecture and runtime flow of the egg detection application after replacing the PyQt5 UI with an OpenCV window.
 
-## 1. Kiến Trúc Tổng Thể
+## 1. Architecture Layers
 
-Ứng dụng được chia thành các tầng chính:
+- **Application (`src/main.py`)** – Loads configuration, prepares logging/exception hooks, starts the camera loop, runs YOLO inference, displays frames, and pushes detection coordinates to the serial line.
+- **Config (`src/config/`)** – Dataclasses that hold strongly-typed configuration plus a YAML/JSON loader that normalises relative paths.
+- **Infra (`src/infra/`)** – Logging setup (`logging.py`) and a lightweight global exception hook (`exceptions.py`) that just logs fatal errors.
+- **Core (`src/core/`)**
+  - `detector/`: `YoloDetector` (Ultralytics YOLOv11) returning `DetectionResult` objects that include bounding boxes and optional annotated frames.
+  - `comm/serial_sender.py`: Background thread that serialises detections to JSON/CSV and writes them to a COM port with automatic retry.
+  - `entities/`: Common data containers (`FrameData`, `Detection`, `BoundingBox`).
 
-- **Main/Application Layer (`src/main.py`)**: Điểm vào của chương trình, khởi tạo cấu hình, logging, exception hook và dây nối (dependency wiring) giữa các mô-đun.
-- **Config Layer (`src/config/`)**: Đọc file cấu hình (YAML/JSON) để xác định tham số camera, YOLO, serial, logging.
-- **Infrastructure Layer (`src/infra/`)**:
-  - `logging.py`: Thiết lập logging (console + file, rotating, format thống nhất).
-  - `exceptions.py`: Định nghĩa global exception hook, ghi log và hiển thị thông báo lỗi (PyQt dialog khi cần).
-- **Domain/Core Layer (`src/core/`)**:
-  - `camera/`: Interface camera và triển khai USB camera.
-  - `detector/`: Interface detector và triển khai YOLOv11 sử dụng Ultralytics.
-  - `comm/`: Giao tiếp serial (pyserial) để gửi tọa độ.
-  - `entities/`: Định nghĩa data class `Detection`, các cấu trúc dữ liệu dùng chung.
-- **UI Layer (`src/ui/`)**:
-  - `main_window.py`: Giao diện chính, hiển thị video và bounding box.
-  - `controller.py`: Trung tâm điều phối signal giữa camera, detector, serial và UI.
-  - `widgets/`: Các widget tùy chỉnh (ví dụ `VideoWidget` để render frame + overlay).
+All PyQt dependencies have been removed; OpenCV handles the window and keyboard events.
 
-Các mô-đun giao tiếp với nhau thông qua interface rõ ràng, giảm phụ thuộc trực tiếp và giúp mock trong unit test.
+## 2. Runtime Flow
 
-## 2. Luồng Hoạt Động Chính
+1. Read configuration from `config/app.yaml`, configure logging, install the exception hook.
+2. Open the USB camera through `cv2.VideoCapture`, apply resolution/FPS if the device supports it.
+3. Load the YOLO model once via `YoloDetector.warmup`.
+4. Start the `SerialSender` thread to keep the COM port alive.
+5. **Main loop**
+   - Capture a frame; if capture fails, log and retry.
+   - Wrap the frame in `FrameData` (UTC timestamp, running `frame_id`, source tag).
+   - Call `detector.detect(frame_data)` to obtain `DetectionResult`.
+   - When detections exist, queue them for serial transmission.
+   - Pick the frame to show: use the model’s annotated frame if available, otherwise draw the boxes locally with OpenCV.
+   - Display via `cv2.imshow` (if GUI support is available); compute a rolling FPS metric every 5 seconds.
+   - Leave the loop when the user presses `Esc` or `q`, or on `Ctrl+C`.
+6. Shut down gracefully: stop the serial thread, release the camera, destroy the OpenCV window (if it was opened).
 
-### 2.1 Khởi Động Ứng Dụng
-1. `main.py` đọc cấu hình hệ thống.
-2. Khởi tạo logging theo cấu hình (mức độ log, file path).
-3. Thiết lập global exception hook để bắt toàn bộ lỗi không xử lý.
-4. Khởi tạo `QApplication` và các service cốt lõi: `CameraService`, `YoloDetector`, `SerialSender`, `UiController`.
-5. `UiController` gắn kết signal/slot, hiển thị `MainWindow` và bắt đầu chu trình đọc camera (khi người dùng nhấn Start hoặc auto-start tùy cấu hình).
+## 3. Module Responsibilities
 
-### 2.2 Chu Trình Nhận Dạng Trứng
-1. **Camera Thread**
-   - `UsbCamera` mở camera USB (OpenCV `VideoCapture`) theo cấu hình (độ phân giải, FPS).
-   - Một thread riêng đọc frame liên tục và push vào queue hoặc emit signal `frameCaptured`.
-   - Nếu camera mất kết nối, camera retry theo chu kỳ và ghi log cảnh báo.
-2. **Detection Worker**
-   - `UiController` nhận signal frame và chuyển sang worker thread xử lý YOLO (tránh block UI).
-   - `YoloDetector` chạy inference trên frame, trả về danh sách `Detection` (bbox, độ tin cậy, tọa độ tâm).
-   - Tùy cấu hình, có thể bỏ qua frame (frame skipping) để cân bằng tốc độ vs. latency.
-3. **UI Rendering**
-   - `MainWindow` nhận frame gốc và danh sách detection, vẽ overlay bounding box bằng `QPainter`.
-   - Cập nhật các widget trạng thái (số lượng trứng, FPS, thiết bị kết nối).
-4. **Serial Output**
-   - `UiController` chuyển đổi danh sách detection thành payload (JSON hoặc CSV).
-   - `SerialSender` gửi payload qua COM port cấu hình, kèm theo timestamp hoặc ID frame.
-   - Nếu gửi thất bại (port bận/mất kết nối), `SerialSender` log lỗi và cố gắng reconnect với backoff.
+| Module | Responsibility |
+| --- | --- |
+| `src/main.py` | Sequential capture → inference → display loop, serial delivery, FPS logging. |
+| `config/models.py` | Dataclasses for camera, detector, serial, logging, and app display toggles. |
+| `config/loader.py` | Reads YAML/JSON, expands relative paths for weights/logs, instantiates dataclasses. |
+| `core/detector/yolo_detector.py` | Wraps Ultralytics YOLO, parses detections, builds annotated frames. |
+| `core/comm/serial_sender.py` | Queued writer to the COM port with reconnect and backoff logic. |
+| `core/entities` | Shared domain objects (`FrameData`, `Detection`, `BoundingBox`). |
+| `infra/logging.py` | Configurable console + rotating file logging. |
+| `infra/exceptions.py` | Logs uncaught exceptions from main and worker threads. |
 
-### 2.3 Logging & Giám Sát
-- Mỗi mô-đun log với namespace riêng (`camera`, `detector`, `serial`, `ui`).
-- Logging mức `DEBUG` dùng trong phát triển, `INFO`/`WARNING` trong môi trường triển khai.
-- Có thể thêm `QtLogHandler` để hiển thị log mới nhất trong UI (ví dụ panel trạng thái).
-
-### 2.4 Xử Lý Ngoại Lệ
-- Global `ExceptionHook` ghi log `CRITICAL`, hiển thị dialog thân thiện (khi chạy UI).
-- Các thread background chuyển exception về main thread bằng signal `errorOccurred`.
-- Các lỗi phổ biến (không mở được camera, fail load model, COM port bận) được catch cụ thể để show hướng dẫn khắc phục.
-
-## 3. Chi Tiết Mô-đun
-
-| Mô-đun | Trách nhiệm chính | Ghi chú |
-| --- | --- | --- |
-| `CameraConfig`, `YoloConfig`, `SerialConfig` | Đóng gói thông tin cấu hình, dùng dataclass bất biến | Cho phép validate tham số ngay khi load |
-| `UsbCamera` | Điều khiển thiết bị camera USB, quản lý thread đọc frame | Hỗ trợ reconnect, emit signal PyQt (`frameCaptured`) |
-| `YoloDetector` | Load weights YOLOv11 từ `weights/`, chạy inference | Cho phép chọn device: CPU/GPU; cấu hình confidence, IoU |
-| `SerialSender` | Mở COM port, định dạng payload, gửi dữ liệu | Sử dụng queue để không block UI, có cơ chế retry |
-| `UiController` | Kết nối các service, điều phối start/stop, nhận signal lỗi | Là lớp Application Service chính |
-| `MainWindow` & `VideoWidget` | Render giao diện, overlay bounding box, hiển thị log | Hỗ trợ toggle hiển thị thông tin detection |
-
-## 4. Luồng Dữ Liệu Chi Tiết
+## 4. Data Pipeline
 
 ```text
-Camera Thread -> Frame Queue -> Detection Worker -> UI Render
-                                  |
-                                  V
-                           SerialSender Queue -> COM Port
+cv2.VideoCapture -- FrameData --> YoloDetector.detect
+                                      |
+                                      +--> SerialSender (COM payload)
+                                      |
+                                 annotated frame / draw_overlay
+                                      |
+                                 cv2.imshow window
 ```
 
-- **Input**: Frame từ camera USB (BGR `numpy.ndarray`).
-- **Processing**:
-  - Tiền xử lý (nếu cần): resize, normalize.
-  - YOLO inference trả về bounding box (x1, y1, x2, y2), độ tin cậy.
-  - Chuyển đổi tọa độ sang trung tâm (x_center, y_center) và chuẩn hóa theo kích thước frame nếu thiết bị cần.
-- **Output**: Payload (JSON/CSV) chứa ID quả trứng, tọa độ, độ tin cậy; được gửi tuần tự theo mỗi frame hoặc theo batch.
+- **Input**: `numpy.ndarray` in BGR format.
+- **Processing**: YOLO returns bounding boxes with class IDs and confidences. When the model does not produce an annotated frame, the application draws rectangles and labels itself.
+- **Output**: Live OpenCV window plus serial payload (JSON or CSV lines) for downstream hardware.
 
-## 5. Cấu Hình & Tham Số
-
-Ví dụ cấu hình YAML:
+## 5. Sample Configuration (`config/app.yaml`)
 
 ```yaml
 camera:
   device_index: 0
-  resolution: [1280, 720]
-  fps: 30
+  resolution: [640, 480]
+  fps: 25
   reconnect_delay_ms: 2000
 
 yolo:
-  weights_path: "weights/egg_detector.pt"
+  weights_path: "../weights/brown-egg.pt"
   confidence_threshold: 0.4
   iou_threshold: 0.5
-  device: "cuda"  # hoặc "cpu"
+  device: "cpu"
+  max_det: 50
 
 serial:
-  port: "COM3"
+  port: "COM15"
   baudrate: 115200
-  payload_format: "json"  # hoặc "csv"
+  payload_format: "json"
+  reconnect_delay_ms: 2000
+
+logging:
+  level: "INFO"
+  filepath: "../logs/app.log"
+  max_bytes: 5242880
+  backup_count: 5
+  console: true
 
 app:
-  auto_start: true
-  ui_language: "vi"
+  enable_overlay: true
 ```
 
-## 6. Kiểm Thử & Giám Sát
+## 6. Operating Notes
 
-- **Unit test** cho từng mô-đun core (`camera`, `detector`, `serial`) bằng mock.
-- **Integration test**: script nhỏ chạy pipeline trên video mẫu hoặc camera ảo.
-- **Monitoring runtime**: log file, UI status panel, có thể thêm metric đơn giản (FPS, latency).
+- Run `python src/main.py --config config/app.yaml`; press `q` or `Esc` to exit (when a window is shown).
+- Use `--no-window` if OpenCV was built without GUI backends or you are running headless; the pipeline still executes and serial payloads are produced.
+- When GUI support is missing, the program automatically falls back to headless mode and logs a warning.
+- Serial status and errors are logged under the `serial.sender` namespace. Check `logs/app.log` to confirm port activity.
+- If the frame rate is too low, consider lowering the camera resolution, switching to a lighter YOLO model, or turning off overlay (`enable_overlay=false`).
 
-## 7. Hướng Mở Rộng
+## 7. Future Extensions
 
-- Hỗ trợ nhiều camera hoặc nhiều model detector.
-- Thêm module tracking (ID quả trứng giữa các frame).
-- Thêm REST API hoặc WebSocket để truyền dữ liệu thay vì COM port.
-- Bổ sung dashboard hiển thị thống kê (số trứng/phút, phân loại theo kích thước).
-
----
-
-Tài liệu này sẽ được cập nhật khi có thay đổi lớn trong kiến trúc hoặc yêu cầu hệ thống.
+- Split capture/inference into separate processes communicating over a queue to exploit concurrency on multi-core systems.
+- Add optional recording of annotated frames or video clips when detections occur.
+- Provide HTTP/WebSocket output beside COM payloads.
+- Instrument detailed latency metrics (capture time, inference time, serial throughput).
