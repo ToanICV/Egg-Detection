@@ -11,7 +11,7 @@ try:
 except ImportError:  # pragma: no cover - dependency may be absent during static checks
     yaml = None
 
-from .models import AppConfig, CameraConfig, Config, LoggingConfig, SerialConfig, YoloConfig
+from .models import AppConfig, CameraConfig, Config, LoggingConfig, RoiConfig, SerialConfig, YoloConfig
 
 
 def _normalize_path(path: Path | str) -> Path:
@@ -55,6 +55,27 @@ def load_config(config_path: Path | str) -> Config:
         logging_raw["filepath"] = (config_path.parent / log_path).resolve()
     logging = LoggingConfig(**logging_raw)
 
-    app = AppConfig(**raw.get("app", {}))
+    app_raw = dict(raw.get("app", {}))
+    roi_raw = app_raw.pop("roi", None)
+    roi = _load_roi_config(roi_raw)
+    app = AppConfig(roi=roi, **app_raw)
 
     return Config(camera=camera, yolo=yolo, serial=serial, logging=logging, app=app)
+
+
+def _load_roi_config(raw_roi: Any) -> RoiConfig:
+    if raw_roi is None:
+        return RoiConfig()
+
+    try:
+        top_left = raw_roi["top_left"]
+        bottom_right = raw_roi["bottom_right"]
+    except (TypeError, KeyError) as exc:
+        raise ValueError("ROI configuration must include 'top_left' and 'bottom_right' coordinates.") from exc
+
+    def _pair(value: Any) -> tuple[float, float]:
+        if value is None or len(value) != 2:
+            raise ValueError("ROI coordinates must be a sequence of two ratios [x, y].")
+        return float(value[0]), float(value[1])
+
+    return RoiConfig(top_left=_pair(top_left), bottom_right=_pair(bottom_right))

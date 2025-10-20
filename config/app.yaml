@@ -26,3 +26,6 @@ logging:
 
 app:
   enable_overlay: true
+  roi:
+    top_left: [0.1, 0.1]
+    bottom_right: [0.9, 0.9]

@@ -64,10 +64,25 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class RoiConfig:
+    """Region-of-interest configuration represented as ratios."""
+
+    top_left: Sequence[float] = (0.0, 0.0)
+    bottom_right: Sequence[float] = (1.0, 1.0)
+
+    def as_tuple(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        return (
+            (float(self.top_left[0]), float(self.top_left[1])),
+            (float(self.bottom_right[0]), float(self.bottom_right[1])),
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Application level configuration."""
 
     enable_overlay: bool = True
+    roi: RoiConfig = field(default_factory=RoiConfig)
 
 
 @dataclass(frozen=True)

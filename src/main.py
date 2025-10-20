@@ -8,7 +8,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -72,6 +72,39 @@ def create_frame(frame_id: int, image: np.ndarray, source: str) -> FrameData:
     )
 
 
+def compute_roi_pixels(config_roi, frame_width: int, frame_height: int) -> Tuple[int, int, int, int]:
+    top_left_ratio, bottom_right_ratio = config_roi.as_tuple()
+    x1 = int(round(top_left_ratio[0] * frame_width))
+    y1 = int(round(top_left_ratio[1] * frame_height))
+    x2 = int(round(bottom_right_ratio[0] * frame_width))
+    y2 = int(round(bottom_right_ratio[1] * frame_height))
+
+    x1 = max(0, min(frame_width - 1, x1))
+    y1 = max(0, min(frame_height - 1, y1))
+    x2 = max(0, min(frame_width - 1, x2))
+    y2 = max(0, min(frame_height - 1, y2))
+
+    if x1 >= x2 or y1 >= y2:
+        logger.warning("ROI configuration invalid after conversion; falling back to full frame.")
+        return 0, 0, frame_width - 1, frame_height - 1
+
+    logger.info("ROI active: top-left=(%d,%d), bottom-right=(%d,%d)", x1, y1, x2, y2)
+    return x1, y1, x2, y2
+
+
+def filter_detections_in_roi(
+    detections: Sequence[Detection],
+    roi: Tuple[int, int, int, int],
+) -> list[Detection]:
+    x1, y1, x2, y2 = roi
+    filtered: list[Detection] = []
+    for det in detections:
+        cx, cy = det.center()
+        if x1 <= cx <= x2 and y1 <= cy <= y2:
+            filtered.append(det)
+    return filtered
+
+
 def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
     install_exception_hook()
 
@@ -105,6 +138,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
     frame_id = 0
     fps_counter = 0
     fps_timer = time.time()
+    roi_pixels: Tuple[int, int, int, int] | None = None
 
     try:
         while True:
@@ -117,18 +151,28 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
             frame_id += 1
             fps_counter += 1
 
+            if roi_pixels is None:
+                frame_height, frame_width = frame.shape[:2]
+                roi_pixels = compute_roi_pixels(config.app.roi, frame_width, frame_height)
+
             frame_data = create_frame(frame_id, frame, source=f"camera:{config.camera.device_index}")
             result: DetectionResult = detector.detect(frame_data)
+            active_detections = filter_detections_in_roi(result.detections, roi_pixels) if roi_pixels else list(result.detections)
 
-            if result.detections:
-                serial_sender.send_detections(result.detections, result.frame)
+            if active_detections:
+                serial_sender.send_detections(active_detections, result.frame)
 
-            display_frame = frame
+            display_frame = frame.copy()
             if config.app.enable_overlay:
-                if result.annotated_image is not None:
-                    display_frame = result.annotated_image
-                else:
-                    display_frame = draw_overlay(frame, result.detections)
+                display_frame = draw_overlay(display_frame, active_detections)
+            if roi_pixels:
+                cv2.rectangle(
+                    display_frame,
+                    (roi_pixels[0], roi_pixels[1]),
+                    (roi_pixels[2], roi_pixels[3]),
+                    (0, 255, 255),
+                    2,
+                )
             if display_enabled:
                 cv2.imshow(window_name, display_frame)
 

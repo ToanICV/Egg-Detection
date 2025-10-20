@@ -80,8 +80,8 @@ The MCU can toggle coordinate streaming by sending the following 7-byte command 
 
 | Frame | Purpose |
 | --- | --- |
-| `24 24 02 00 CRC 23 23` | Disable coordinate transmission (queue is flushed). 24240200022323|
-| `24 24 02 01 CRC 23 23` | Re-enable coordinate transmission. 24240201032323|
+| `24 24 02 00 CRC 23 23` | Disable coordinate transmission (queue is flushed). |
+| `24 24 02 01 CRC 23 23` | Re-enable coordinate transmission. |
 
 The CRC is computed in the same way (XOR of all bytes from header through the command value).
 
@@ -104,7 +104,7 @@ yolo:
 serial:
   port: "COM15"
   baudrate: 115200
-  payload_format: "json"
+  payload_format: "binary"
   reconnect_delay_ms: 2000
 
 logging:
@@ -116,8 +116,12 @@ logging:
 
 app:
   enable_overlay: true
+  roi:
+    top_left: [0.1, 0.1]
+    bottom_right: [0.9, 0.9]
 ```
 
+`top_left` and `bottom_right` are percentages of the frame width/height (0.0–1.0). Set them according to the pickable region; no additional padding is applied automatically.
 ## 7. Operating Notes
 
 - Run `python src/main.py --config config/app.yaml`; press `q` or `Esc` to exit (when a window is shown).
