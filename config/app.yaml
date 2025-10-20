@@ -14,7 +14,7 @@ yolo:
 serial:
   port: "COM15"
   baudrate: 115200
-  payload_format: "json"
+  payload_format: "binary"
   reconnect_delay_ms: 2000
 
 logging:

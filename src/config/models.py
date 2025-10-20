@@ -45,7 +45,7 @@ class SerialConfig:
     parity: Literal["N", "E", "O", "M", "S"] = "N"
     stopbits: float = 1
     timeout: float = 0.1
-    payload_format: Literal["json", "csv"] = "json"
+    payload_format: Literal["json", "csv", "binary"] = "json"
     reconnect_delay_ms: int = 2000
 
 

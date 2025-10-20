@@ -38,7 +38,7 @@ All PyQt dependencies have been removed; OpenCV handles the window and keyboard 
 | `config/models.py` | Dataclasses for camera, detector, serial, logging, and app display toggles. |
 | `config/loader.py` | Reads YAML/JSON, expands relative paths for weights/logs, instantiates dataclasses. |
 | `core/detector/yolo_detector.py` | Wraps Ultralytics YOLO, parses detections, builds annotated frames. |
-| `core/comm/serial_sender.py` | Queued writer to the COM port with reconnect and backoff logic. |
+| `core/comm/serial_sender.py` | Queued writer to the COM port (JSON/CSV/binary MCU frame) with reconnect logic. |
 | `core/entities` | Shared domain objects (`FrameData`, `Detection`, `BoundingBox`). |
 | `infra/logging.py` | Configurable console + rotating file logging. |
 | `infra/exceptions.py` | Logs uncaught exceptions from main and worker threads. |
@@ -59,7 +59,33 @@ cv2.VideoCapture -- FrameData --> YoloDetector.detect
 - **Processing**: YOLO returns bounding boxes with class IDs and confidences. When the model does not produce an annotated frame, the application draws rectangles and labels itself.
 - **Output**: Live OpenCV window plus serial payload (JSON or CSV lines) for downstream hardware.
 
-## 5. Sample Configuration (`config/app.yaml`)
+## 5. Serial Frame (binary mode)
+
+When `serial.payload_format` is set to `"binary"` (default), each transmission follows this structure:
+
+```
+Header (0x24 0x24)
+DataType (0x01)
+DataLen  (N)                # number of 16-bit coordinate words (2 per detection)
+Payload  (N words)         # [center_x1, center_y1, center_x2, ...] big-endian uint16
+CRC      (1 byte)          # XOR of all previous bytes up to CRC, masked with 0xFF
+Footer   (0x23 0x23)
+```
+
+If no detections are present, `DataLen` is zero and only header/footer plus CRC are sent. Coordinates are rounded and clamped to the range `[0, 65535]`. The CRC uses a simple XOR accumulator to match most MCU expectations.
+
+### 5.1 Control frames from MCU
+
+The MCU can toggle coordinate streaming by sending the following 7-byte command frames:
+
+| Frame | Purpose |
+| --- | --- |
+| `24 24 02 00 CRC 23 23` | Disable coordinate transmission (queue is flushed). 24240200022323|
+| `24 24 02 01 CRC 23 23` | Re-enable coordinate transmission. 24240201032323|
+
+The CRC is computed in the same way (XOR of all bytes from header through the command value).
+
+## 6. Sample Configuration (`config/app.yaml`)
 
 ```yaml
 camera:
@@ -92,7 +118,7 @@ app:
   enable_overlay: true
 ```
 
-## 6. Operating Notes
+## 7. Operating Notes
 
 - Run `python src/main.py --config config/app.yaml`; press `q` or `Esc` to exit (when a window is shown).
 - Use `--no-window` if OpenCV was built without GUI backends or you are running headless; the pipeline still executes and serial payloads are produced.
@@ -100,7 +126,7 @@ app:
 - Serial status and errors are logged under the `serial.sender` namespace. Check `logs/app.log` to confirm port activity.
 - If the frame rate is too low, consider lowering the camera resolution, switching to a lighter YOLO model, or turning off overlay (`enable_overlay=false`).
 
-## 7. Future Extensions
+## 8. Future Extensions
 
 - Split capture/inference into separate processes communicating over a queue to exploit concurrency on multi-core systems.
 - Add optional recording of annotated frames or video clips when detections occur.
