@@ -6,7 +6,7 @@ camera:
 
 yolo:
   weights_path: "../weights/brown-egg.pt"
-  confidence_threshold: 0.4
+  confidence_threshold: 0.7
   iou_threshold: 0.5
   device: "cpu"
   max_det: 50
