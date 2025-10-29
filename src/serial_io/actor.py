@@ -59,19 +59,20 @@ class ActorLink:
     def read_status(self, timeout_s: Optional[float] = None) -> Optional[ActorStatus]:
         frame = build_actor_status_request()
         timeout = timeout_s if timeout_s is not None else self.config.response_timeout_ms / 1000.0
-        logger.debug("ActorLink: requesting status frame.")
+        logger.debug("📤 ACTOR STATUS: requesting → COM%s", self.config.port)
         response = self._bus.request(
             frame,
             predicate=lambda f: f.group == ACTOR_GROUP_STATUS,
             timeout_s=timeout,
         )
         if response is None:
-            logger.warning("ActorLink: status request timed out.")
+            logger.warning("❌ ACTOR STATUS: timeout (%.1fs)", timeout)
             return None
         if not response.crc_ok:
-            logger.warning("ActorLink: received status frame with invalid CRC.")
+            logger.warning("❌ ACTOR STATUS: invalid CRC")
             return None
         status = parse_actor_status(response)
+        logger.debug("📥 ACTOR STATUS: moving=%s, distance=%s", status.is_moving, status.distance_cm)
         self._update_status(status)
         return status
 
@@ -81,19 +82,20 @@ class ActorLink:
     def _send_command(self, command: ActorCommand) -> bool:
         frame = build_actor_command(command)
         timeout = self.config.ack_timeout_ms / 1000.0
-        logger.info("ActorLink: sending command %s", command.name)
+        frame_hex = frame.hex().upper()
+        logger.info("📤 ACTOR CMD: %s → COM%s [%s]", command.name, self.config.port, frame_hex)
         ack = self._bus.request(
             frame,
             predicate=lambda f: f.group == ACTOR_GROUP_COMMAND and f.payload_as_ints()[:1] == (ActorCommand.ACK,),
             timeout_s=timeout,
         )
         if ack is None:
-            logger.warning("ActorLink: command %s timed out waiting for ACK.", command.name)
+            logger.warning("❌ ACTOR CMD: %s timeout (no ACK after %.1fs)", command.name, timeout)
             return False
         if not ack.crc_ok:
-            logger.warning("ActorLink: ACK for %s failed CRC validation.", command.name)
+            logger.warning("❌ ACTOR CMD: %s ACK failed CRC validation", command.name)
             return False
-        logger.info("ActorLink: command %s acknowledged.", command.name)
+        logger.info("✅ ACTOR CMD: %s acknowledged", command.name)
         return True
 
     def _handle_frame(self, frame: DecodedFrame) -> None:

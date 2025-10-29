@@ -47,7 +47,8 @@ class ArmLink:
     def pick(self, x_mm: int, y_mm: int) -> bool:
         frame = build_arm_pick_command(x_mm, y_mm)
         timeout = self.config.ack_timeout_ms / 1000.0
-        logger.info("ArmLink: sending pick command to (%d, %d) mm", x_mm, y_mm)
+        frame_hex = frame.hex().upper()
+        logger.info("📤 ARM CMD: PICK (%d, %d)mm → COM%s [%s]", x_mm, y_mm, self.config.port, frame_hex)
         ack = self._bus.request(
             frame,
             predicate=lambda f: f.group == ARM_GROUP_COMMAND
@@ -56,30 +57,31 @@ class ArmLink:
             timeout_s=timeout,
         )
         if ack is None:
-            logger.warning("ArmLink: pick command timed out waiting for ACK.")
+            logger.warning("❌ ARM CMD: PICK timeout (no ACK after %.1fs)", timeout)
             return False
         if not ack.crc_ok:
-            logger.warning("ArmLink: ACK frame failed CRC validation.")
+            logger.warning("❌ ARM CMD: PICK ACK failed CRC validation")
             return False
-        logger.info("ArmLink: pick command acknowledged.")
+        logger.info("✅ ARM CMD: PICK acknowledged")
         return True
 
     def read_status(self, timeout_s: Optional[float] = None) -> Optional[ArmStatus]:
         frame = build_arm_status_request()
         timeout = timeout_s if timeout_s is not None else self.config.response_timeout_ms / 1000.0
-        logger.debug("ArmLink: requesting status frame.")
+        logger.debug("📤 ARM STATUS: requesting → COM%s", self.config.port)
         response = self._bus.request(
             frame,
             predicate=lambda f: f.group == ARM_GROUP_STATUS,
             timeout_s=timeout,
         )
         if response is None:
-            logger.warning("ArmLink: status request timed out.")
+            logger.warning("❌ ARM STATUS: timeout (%.1fs)", timeout)
             return None
         if not response.crc_ok:
-            logger.warning("ArmLink: received status frame with invalid CRC.")
+            logger.warning("❌ ARM STATUS: invalid CRC")
             return None
         status = parse_arm_status(response)
+        logger.debug("📥 ARM STATUS: busy=%s", status.is_busy)
         self._update_status(status)
         return status
 

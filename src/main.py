@@ -134,11 +134,11 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
             bus_registry[link_cfg.port] = bus
         return bus
 
-    actor_bus = _get_bus(config.control.serial.actor)
-    arm_bus = _get_bus(config.control.serial.arm)
-
-    actor_link = ActorLink(actor_bus, config.control.serial.actor)
-    arm_link = ArmLink(arm_bus, config.control.serial.arm)
+    # Use single shared bus for RS485 - both devices on same COM port
+    shared_bus = _get_bus(config.control.serial)
+    
+    actor_link = ActorLink(shared_bus, config.control.serial)
+    arm_link = ArmLink(shared_bus, config.control.serial)
     control_context = ControlContext(
         actor=actor_link,
         arm=arm_link,

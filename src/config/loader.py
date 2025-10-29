@@ -99,7 +99,7 @@ def _load_control_config(raw_root: Dict[str, Any], defaults: ControlConfig) -> C
     serial_section = control_raw.get("serial")
     if serial_section is None and isinstance(raw_root.get("serial"), dict):
         serial_section = raw_root["serial"]
-    serial_config = _load_serial_topology(serial_section, defaults.serial)
+    serial_config = _load_serial_config(serial_section, defaults.serial)
 
     scheduler_raw = control_raw.get("scheduler", {})
     scheduler_config = defaults.scheduler
@@ -114,7 +114,15 @@ def _load_control_config(raw_root: Dict[str, Any], defaults: ControlConfig) -> C
     return ControlConfig(serial=serial_config, scheduler=scheduler_config, behaviour=behaviour_config)
 
 
+def _load_serial_config(raw_serial: Any, defaults: SerialLinkConfig) -> SerialLinkConfig:
+    """Load single serial configuration for RS485 bus."""
+    if not isinstance(raw_serial, dict) or not raw_serial:
+        return defaults
+    return SerialLinkConfig(**raw_serial)
+
+
 def _load_serial_topology(raw_serial: Any, defaults: SerialTopologyConfig) -> SerialTopologyConfig:
+    """Legacy function for backward compatibility."""
     if not isinstance(raw_serial, dict) or not raw_serial:
         return defaults
 

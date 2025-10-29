@@ -49,6 +49,17 @@ class ControlStateMachine(StateMachine):
     move_timer_elapsed = move_only.to(turn_second)
     second_turn_complete = turn_second.to(scan_and_move)
 
+    def before_transition(self, event: str, source: object, target: object) -> None:
+        """Log state transitions."""
+        source_name = getattr(source, "id", str(source))
+        target_name = getattr(target, "id", str(target))
+        logger.info("🔄 STATE TRANSITION: %s → %s (trigger: %s)", source_name, target_name, event)
+
+    def after_transition(self, event: str, source: object, target: object) -> None:
+        """Log current state after transition."""
+        current_state = getattr(target, "id", str(target))
+        logger.info("📍 CURRENT STATE: %s", current_state)
+
     def __init__(self, context: ControlContext):
         self.context = context
         super().__init__()

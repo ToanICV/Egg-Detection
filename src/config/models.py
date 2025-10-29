@@ -146,7 +146,7 @@ class BehaviourConfig:
 class ControlConfig:
     """Top-level control subsystem configuration."""
 
-    serial: SerialTopologyConfig = field(default_factory=SerialTopologyConfig)
+    serial: SerialLinkConfig = field(default_factory=lambda: SerialLinkConfig(port="COM15"))
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     behaviour: BehaviourConfig = field(default_factory=BehaviourConfig)
 

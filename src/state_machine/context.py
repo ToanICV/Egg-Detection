@@ -47,7 +47,14 @@ class ControlContext:
     def update_detections(self, detections: Iterable[Detection], frame: FrameData) -> None:
         self.current_detections = list(detections)
         self.current_frame = frame
-        self.logger.debug("Updated detections (count=%d, frame=%s)", len(self.current_detections), frame.frame_id)
+        detection_count = len(self.current_detections)
+        if detection_count > 0:
+            self.logger.info("🎯 DETECTIONS: %d eggs found (frame %s)", detection_count, frame.frame_id)
+            for i, det in enumerate(self.current_detections):
+                cx, cy = det.center()
+                self.logger.debug("  📍 Egg %d: center=(%.1f, %.1f), conf=%.2f", i+1, cx, cy, det.confidence)
+        else:
+            self.logger.debug("🔍 DETECTIONS: no eggs found (frame %s)", frame.frame_id)
 
     def update_actor_status(self, status: ActorStatus) -> None:
         self.latest_actor_status = status
@@ -92,22 +99,32 @@ class ControlContext:
             self.prepare_pick_queue()
 
     def command_next_pick(self) -> bool:
+        if not self._pick_queue:
+            self.logger.debug("🤖 PICK: no targets in queue")
+            return False
+            
         while self._pick_queue:
             target = self._pick_queue.popleft()
             attempts = self._pick_attempts.get(target.id, 0)
             if attempts >= self.config.behaviour.max_arm_pick_attempts:
-                self.logger.warning("Target %s skipped after %d attempts.", target.id, attempts)
+                self.logger.warning("🤖 PICK: target %s skipped after %d failed attempts", target.id, attempts)
                 continue
 
             coords = self._map_detection_to_mm(target)
+            cx, cy = target.center()
+            self.logger.info("🤖 PICK: targeting egg %s at pixel(%.1f,%.1f) → mm(%d,%d)", 
+                           target.id, cx, cy, coords[0], coords[1])
             success = self.arm.pick(*coords)
             self._pick_attempts[target.id] = attempts + 1
             if success:
                 self._current_target = target
                 self._waiting_for_arm = True
-                self.logger.info("Commanded arm to pick target %s at %s mm.", target.id, coords)
+                self.logger.info("✅ PICK: arm command sent, waiting for completion")
                 return True
-            self.logger.warning("Arm pick ACK failed for target %s (attempt %d).", target.id, attempts + 1)
+            self.logger.warning("❌ PICK: arm command failed for target %s (attempt %d/%d)", 
+                              target.id, attempts + 1, self.config.behaviour.max_arm_pick_attempts)
+        
+        self.logger.info("🤖 PICK: no more valid targets")
         self._current_target = None
         return False
 
@@ -132,24 +149,38 @@ class ControlContext:
 
     def ensure_actor_stopped(self) -> bool:
         if self._actor_motion == ActorMotion.STOPPED:
+            self.logger.debug("🛑 MOTION: already stopped")
             return True
+        self.logger.info("🛑 MOTION: commanding stop")
         success = self.actor.stop_motion()
         if success:
             self._actor_motion = ActorMotion.STOPPED
+            self.logger.info("✅ MOTION: stop command sent")
+        else:
+            self.logger.error("❌ MOTION: stop command failed")
         return success
 
     def command_move_forward(self) -> bool:
         if self._actor_motion == ActorMotion.FORWARD:
+            self.logger.debug("🚗 MOTION: already moving forward")
             return True
+        self.logger.info("🚗 MOTION: commanding move forward")
         success = self.actor.move_forward()
         if success:
             self._actor_motion = ActorMotion.FORWARD
+            self.logger.info("✅ MOTION: move forward command sent")
+        else:
+            self.logger.error("❌ MOTION: move forward command failed")
         return success
 
     def command_turn(self) -> bool:
+        self.logger.info("🔄 MOTION: commanding turn 90°")
         success = self.actor.turn_90()
         if success:
             self._actor_motion = ActorMotion.TURNING
+            self.logger.info("✅ MOTION: turn 90° command sent")
+        else:
+            self.logger.error("❌ MOTION: turn 90° command failed")
         return success
 
     def is_waiting_for_arm(self) -> bool:
