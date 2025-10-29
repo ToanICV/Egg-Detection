@@ -11,7 +11,19 @@ try:
 except ImportError:  # pragma: no cover - dependency may be absent during static checks
     yaml = None
 
-from .models import AppConfig, CameraConfig, Config, LoggingConfig, RoiConfig, SerialConfig, YoloConfig
+from .models import (
+    AppConfig,
+    BehaviourConfig,
+    CameraConfig,
+    Config,
+    ControlConfig,
+    LoggingConfig,
+    RoiConfig,
+    SchedulerConfig,
+    SerialLinkConfig,
+    SerialTopologyConfig,
+    YoloConfig,
+)
 
 
 def _normalize_path(path: Path | str) -> Path:
@@ -47,8 +59,6 @@ def load_config(config_path: Path | str) -> Config:
         yolo_raw["weights_path"] = (config_path.parent / weights_path).resolve()
     yolo = YoloConfig(**yolo_raw)
 
-    serial = SerialConfig(**raw.get("serial", {}))
-
     logging_raw = raw.get("logging", {})
     log_path = logging_raw.get("filepath")
     if log_path:
@@ -60,7 +70,9 @@ def load_config(config_path: Path | str) -> Config:
     roi = _load_roi_config(roi_raw)
     app = AppConfig(roi=roi, **app_raw)
 
-    return Config(camera=camera, yolo=yolo, serial=serial, logging=logging, app=app)
+    control = _load_control_config(raw, defaults=ControlConfig())
+
+    return Config(camera=camera, yolo=yolo, logging=logging, app=app, control=control)
 
 
 def _load_roi_config(raw_roi: Any) -> RoiConfig:
@@ -79,3 +91,40 @@ def _load_roi_config(raw_roi: Any) -> RoiConfig:
         return float(value[0]), float(value[1])
 
     return RoiConfig(top_left=_pair(top_left), bottom_right=_pair(bottom_right))
+
+
+def _load_control_config(raw_root: Dict[str, Any], defaults: ControlConfig) -> ControlConfig:
+    control_raw = dict(raw_root.get("control", {})) if isinstance(raw_root.get("control"), dict) else {}
+
+    serial_section = control_raw.get("serial")
+    if serial_section is None and isinstance(raw_root.get("serial"), dict):
+        serial_section = raw_root["serial"]
+    serial_config = _load_serial_topology(serial_section, defaults.serial)
+
+    scheduler_raw = control_raw.get("scheduler", {})
+    scheduler_config = defaults.scheduler
+    if isinstance(scheduler_raw, dict):
+        scheduler_config = SchedulerConfig(**scheduler_raw)
+
+    behaviour_raw = control_raw.get("behaviour", {})
+    behaviour_config = defaults.behaviour
+    if isinstance(behaviour_raw, dict):
+        behaviour_config = BehaviourConfig(**behaviour_raw)
+
+    return ControlConfig(serial=serial_config, scheduler=scheduler_config, behaviour=behaviour_config)
+
+
+def _load_serial_topology(raw_serial: Any, defaults: SerialTopologyConfig) -> SerialTopologyConfig:
+    if not isinstance(raw_serial, dict) or not raw_serial:
+        return defaults
+
+    if "actor" in raw_serial or "arm" in raw_serial:
+        actor_raw = raw_serial.get("actor", {})
+        arm_raw = raw_serial.get("arm", {})
+        actor_cfg = SerialLinkConfig(**actor_raw) if isinstance(actor_raw, dict) else defaults.actor
+        arm_cfg = SerialLinkConfig(**arm_raw) if isinstance(arm_raw, dict) else defaults.arm
+        return SerialTopologyConfig(actor=actor_cfg, arm=arm_cfg)
+
+    # Backward compatibility: treat single serial block as shared defaults.
+    shared = SerialLinkConfig(**raw_serial)
+    return SerialTopologyConfig(actor=shared, arm=SerialLinkConfig(**raw_serial))

@@ -37,7 +37,7 @@ class YoloConfig:
 
 @dataclass(frozen=True)
 class SerialConfig:
-    """Serial communication configuration."""
+    """Legacy serial communication configuration used by standalone sender."""
 
     port: str = "COM3"
     baudrate: int = 115200
@@ -47,6 +47,39 @@ class SerialConfig:
     timeout: float = 0.1
     payload_format: Literal["json", "csv", "binary"] = "json"
     reconnect_delay_ms: int = 2000
+
+
+@dataclass(frozen=True)
+class SerialLinkConfig:
+    """Serial link configuration for control endpoints."""
+
+    port: str = "COM3"
+    baudrate: int = 115200
+    bytesize: int = 8
+    parity: Literal["N", "E", "O", "M", "S"] = "N"
+    stopbits: float = 1
+    timeout: float = 0.1
+    reconnect_delay_ms: int = 2000
+    ack_timeout_ms: int = 500
+    response_timeout_ms: int = 1000
+    max_retries: int = 3
+    read_chunk_size: int = 1
+
+
+def _default_actor_serial() -> SerialLinkConfig:
+    return SerialLinkConfig()
+
+
+def _default_arm_serial() -> SerialLinkConfig:
+    return SerialLinkConfig(port="COM4")
+
+
+@dataclass(frozen=True)
+class SerialTopologyConfig:
+    """Serial configuration bundle for actor and arm links."""
+
+    actor: SerialLinkConfig = field(default_factory=_default_actor_serial)
+    arm: SerialLinkConfig = field(default_factory=_default_arm_serial)
 
 
 @dataclass(frozen=True)
@@ -86,11 +119,44 @@ class AppConfig:
 
 
 @dataclass(frozen=True)
+class SchedulerConfig:
+    """Scheduler settings for timers and polling loops."""
+
+    actor_status_interval_ms: int = 1000
+    arm_status_interval_ms: int = 1000
+    scan_only_timeout_ms: int = 5000
+    move_only_duration_ms: int = 5000
+    detection_refresh_interval_ms: int = 1000
+    turn_check_interval_ms: int = 1000
+
+
+@dataclass(frozen=True)
+class BehaviourConfig:
+    """Control behaviour thresholds and limits."""
+
+    distance_stop_threshold_cm: float = 30.0
+    detection_center_tolerance: float = 0.2
+    detection_min_confidence: float = 0.5
+    max_arm_pick_attempts: int = 3
+    arm_ready_timeout_ms: int = 2000
+    arm_pick_timeout_ms: int = 8000
+
+
+@dataclass(frozen=True)
+class ControlConfig:
+    """Top-level control subsystem configuration."""
+
+    serial: SerialTopologyConfig = field(default_factory=SerialTopologyConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    behaviour: BehaviourConfig = field(default_factory=BehaviourConfig)
+
+
+@dataclass(frozen=True)
 class Config:
     """Root configuration object."""
 
     camera: CameraConfig = field(default_factory=CameraConfig)
     yolo: YoloConfig = field(default_factory=YoloConfig)
-    serial: SerialConfig = field(default_factory=SerialConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     app: AppConfig = field(default_factory=AppConfig)
+    control: ControlConfig = field(default_factory=ControlConfig)

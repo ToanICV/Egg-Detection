@@ -1,5 +1,5 @@
 camera:
-  device_index: 0
+  device_index: 'http://192.168.34.102:8080/video'
   resolution: [640, 480]
   fps: 25
   reconnect_delay_ms: 2000
@@ -10,12 +10,6 @@ yolo:
   iou_threshold: 0.5
   device: "cpu"
   max_det: 50
-
-serial:
-  port: "COM15"
-  baudrate: 115200
-  payload_format: "binary"
-  reconnect_delay_ms: 2000
 
 logging:
   level: "INFO"
@@ -29,3 +23,25 @@ app:
   roi:
     top_left: [0.1, 0.1]
     bottom_right: [0.9, 0.9]
+
+control:
+  serial:
+    port: "COM15"
+    baudrate: 115200
+    ack_timeout_ms: 700
+    response_timeout_ms: 1200
+    max_retries: 3
+  scheduler:
+    actor_status_interval_ms: 1000
+    arm_status_interval_ms: 1000
+    scan_only_timeout_ms: 5000
+    move_only_duration_ms: 5000
+    detection_refresh_interval_ms: 1000
+    turn_check_interval_ms: 1000
+  behaviour:
+    distance_stop_threshold_cm: 30.0
+    detection_center_tolerance: 0.2
+    detection_min_confidence: 0.6
+    max_arm_pick_attempts: 3
+    arm_ready_timeout_ms: 2000
+    arm_pick_timeout_ms: 8000
