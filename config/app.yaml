@@ -1,5 +1,5 @@
 camera:
-  device_index: 'http://192.168.34.102:8080/video'
+  device_index: 0
   resolution: [640, 480]
   fps: 25
   reconnect_delay_ms: 2000
@@ -26,7 +26,7 @@ app:
 
 control:
   serial:
-    port: "COM15"
+    port: "COM14"
     baudrate: 115200
     ack_timeout_ms: 700
     response_timeout_ms: 1200

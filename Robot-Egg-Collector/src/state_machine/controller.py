@@ -125,7 +125,7 @@ class ControlStateMachine(StateMachine):
     def handle_detection(self, event: DetectionEvent) -> None:
         self.context.update_detections(event.detections, event.frame)
 
-        if self.is_pick_up_egg:
+        if self.is_pickup_active:
             if not event.detections and not self.context.is_waiting_for_arm():
                 logger.info("Detections cleared while picking; completing cycle.")
                 self.finish_picking()
@@ -163,7 +163,7 @@ class ControlStateMachine(StateMachine):
         waiting_before = self.context.is_waiting_for_arm()
         self.context.update_arm_status(event.status)
 
-        if not self.is_pick_up_egg:
+        if not self.is_pickup_active:
             return
 
         if event.status.is_busy:
@@ -192,7 +192,7 @@ class ControlStateMachine(StateMachine):
 
     @property
     def is_pickup_active(self) -> bool:
-        return self.is_pick_up_egg
+        return self.current_state == self.pick_up_egg
 
 
 class ControlEngine:
