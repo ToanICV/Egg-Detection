@@ -1,4 +1,4 @@
-"""Configuration package for EggDetection application."""
+"""Gói cấu hình phục vụ ứng dụng Robot Egg Collector."""
 
 from .loader import load_config
 from .models import (

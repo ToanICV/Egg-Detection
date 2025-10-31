@@ -1,4 +1,4 @@
-"""Serial communication helpers for EggDetection control system."""
+"""Các tiện ích giao tiếp nối tiếp phục vụ hệ thống điều khiển Robot Egg."""
 
 from .actor import ActorLink
 from .arm import ArmLink

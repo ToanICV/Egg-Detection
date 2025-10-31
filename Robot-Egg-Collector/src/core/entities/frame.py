@@ -1,4 +1,4 @@
-"""Frame container used across the pipeline."""
+"""Cấu trúc chứa khung hình và metadata dùng xuyên suốt pipeline."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import numpy as np
 
 @dataclass(frozen=True)
 class FrameData:
-    """Encapsulates a frame along with metadata."""
+    """Gói khung hình cùng thông tin thời gian và nguồn phát."""
 
     image: np.ndarray
     timestamp: datetime
@@ -19,6 +19,7 @@ class FrameData:
     source: Optional[str] = None
 
     def copy_with(self, **kwargs) -> "FrameData":
+        """Tạo bản sao của khung hình với các trường được ghi đè tùy chọn."""
         values = {
             "image": self.image,
             "timestamp": self.timestamp,

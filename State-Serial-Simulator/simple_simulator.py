@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 import threading
 import time
+import queue
 from datetime import datetime
 
 class SimpleSerialSimulator:
@@ -18,6 +19,9 @@ class SimpleSerialSimulator:
         self.serial_port = None
         self.receiving = False
         self.receive_thread = None
+        self.send_queue = queue.Queue()
+        self._send_thread = threading.Thread(target=self.send_loop, daemon=True)
+        self._send_thread.start()
         self.setup_ui()
         
     def setup_ui(self):
@@ -45,26 +49,25 @@ class SimpleSerialSimulator:
         arm_frame = tk.LabelFrame(control_frame, text="ARM", padx=5, pady=5)
         arm_frame.pack(fill="x", pady=5)
         
-        tk.Button(arm_frame, text="ARM ACK", command=lambda: self.send_data("ARM_ACK", b'\x24\x24\x06\x04\xFF\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(arm_frame, text="ARM Picking", command=lambda: self.send_data("ARM_PICKING", b'\x24\x24\x05\x03\x01\x51\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(arm_frame, text="ARM Picked", command=lambda: self.send_data("ARM_PICKED", b'\x24\x24\x05\x03\x00\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(arm_frame, text="ACK pick-up", command=lambda: self.send_data("ARM_ACK_PICK", b'\x24\x24\x06\x04\xFF\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(arm_frame, text="ACK state (moving)", command=lambda: self.send_data("ARM_STATE_MOVING", b'\x24\x24\x06\x03\x01\x52\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(arm_frame, text="ACK state (idle)", command=lambda: self.send_data("ARM_STATE_IDLE", b'\x24\x24\x06\x03\x00\x51\x23\x23')).pack(side=tk.LEFT, padx=5)
         
         # ACTOR buttons
         actor_frame = tk.LabelFrame(control_frame, text="ACTOR", padx=5, pady=5)
         actor_frame.pack(fill="x", pady=5)
         
-        tk.Button(actor_frame, text="ACTOR ACK", command=lambda: self.send_data("ACTOR_ACK", b'\x24\x24\x05\x04\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(actor_frame, text="ACTOR Moving", command=lambda: self.send_data("ACTOR_MOVING", b'\x24\x24\x06\x03\x01\x64\xB6\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(actor_frame, text="ACTOR Stopped", command=lambda: self.send_data("ACTOR_STOPPED", b'\x24\x24\x06\x03\x00\x64\xB5\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(actor_frame, text="ACTOR Turning", command=lambda: self.send_data("ACTOR_TURNING", b'\x24\x24\x06\x03\x02\x64\xB7\x23\x23')).pack(side=tk.LEFT, padx=5)
+        actor_cmd_row = tk.Frame(actor_frame)
+        actor_cmd_row.pack(fill="x", pady=5)
+        tk.Button(actor_cmd_row, text="ACK move forward", command=lambda: self.send_data("ACTOR_ACK_MOVE_FORWARD", b'\x24\x24\x05\x04\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(actor_cmd_row, text="ACK move backward", command=lambda: self.send_data("ACTOR_ACK_MOVE_BACKWARD", b'\x24\x24\x05\x04\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(actor_cmd_row, text="ACK stop", command=lambda: self.send_data("ACTOR_ACK_STOP", b'\x24\x24\x05\x04\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(actor_cmd_row, text="ACK turn 90", command=lambda: self.send_data("ACTOR_ACK_TURN", b'\x24\x24\x05\x04\xFF\x50\x23\x23')).pack(side=tk.LEFT, padx=5)
         
-        # Test buttons
-        test_frame = tk.LabelFrame(control_frame, text="TEST", padx=5, pady=5)
-        test_frame.pack(fill="x", pady=5)
-        
-        tk.Button(test_frame, text="Start Cycle", command=lambda: self.send_data("START_CYCLE", b'\x24\x24\x05\x04\x01\x52\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(test_frame, text="Reset", command=lambda: self.send_data("RESET", b'\x24\x24\x05\x04\x03\x54\x23\x23')).pack(side=tk.LEFT, padx=5)
-        tk.Button(test_frame, text="Custom Test", command=lambda: self.send_data("TEST", b'Hello COM15\r\n')).pack(side=tk.LEFT, padx=5)
+        actor_state_row = tk.Frame(actor_frame)
+        actor_state_row.pack(fill="x", pady=5)
+        tk.Button(actor_state_row, text="ACK state (no obstacle)", command=lambda: self.send_data("ACTOR_STATE_CLEAR", b'\x24\x24\x05\x03\x01\x64\xB5\x23\x23')).pack(side=tk.LEFT, padx=5)
+        tk.Button(actor_state_row, text="ACK state (get obstacle)", command=lambda: self.send_data("ACTOR_STATE_OBSTACLE", b'\x24\x24\x05\x03\x01\x10\x61\x23\x23')).pack(side=tk.LEFT, padx=5)
         
         # Custom send frame
         custom_frame = tk.LabelFrame(self.root, text="Custom Command", padx=5, pady=5)
@@ -91,6 +94,10 @@ class SimpleSerialSimulator:
         
     def log(self, message, color="black"):
         """Add message to log with timestamp and color."""
+        if threading.current_thread() is not threading.main_thread():
+            self.root.after(0, self.log, message, color)
+            return
+
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         log_msg = f"[{timestamp}] {message}\n"
         
@@ -135,7 +142,7 @@ class SimpleSerialSimulator:
                 self.disconnect_serial()
                 
             self.serial_port = serial.Serial(
-                port='COM15',
+                port='COM21',
                 baudrate=115200,
                 timeout=1.0
             )
@@ -158,6 +165,7 @@ class SimpleSerialSimulator:
             
             if self.serial_port and self.serial_port.is_open:
                 self.serial_port.close()
+            self.serial_port = None
                 
             self.status_label.config(text="Disconnected", fg="red")
             self.log("🔌 Disconnected from COM15")
@@ -193,7 +201,26 @@ class SimpleSerialSimulator:
             except Exception as e:
                 self.log(f"❌ Receive error: {e}")
                 break
-    
+
+    def send_loop(self):
+        """Background thread to transmit queued frames without blocking the UI."""
+        while True:
+            item = self.send_queue.get()
+            if item is None:
+                break
+            event_name, data = item
+            if not self.serial_port or not self.serial_port.is_open:
+                self.log(f"❌ Send aborted [{event_name}]: COM15 not connected")
+                continue
+            try:
+                bytes_written = self.serial_port.write(data)
+                hex_data = ' '.join(f'{b:02X}' for b in data)
+                self.log(f"📤 TX [{event_name}]: {hex_data} ({bytes_written} bytes)")
+            except serial.SerialException as e:
+                self.log(f"❌ Send error [{event_name}]: {e}")
+            except Exception as e:
+                self.log(f"❌ Unexpected send error [{event_name}]: {e}")
+
     def process_received_data(self, data):
         """Process and display received data."""
         hex_data = ' '.join(f'{b:02X}' for b in data)
@@ -252,18 +279,9 @@ class SimpleSerialSimulator:
         if not self.serial_port or not self.serial_port.is_open:
             self.log("❌ Not connected to COM15!")
             return
-            
-        try:
-            # Send data
-            bytes_written = self.serial_port.write(data)
-            self.serial_port.flush()  # Force send immediately
-            
-            # Log the transmission
-            hex_data = ' '.join(f'{b:02X}' for b in data)
-            self.log(f"📤 TX [{event_name}]: {hex_data} ({bytes_written} bytes)")
-            
-        except Exception as e:
-            self.log(f"❌ Send error [{event_name}]: {e}")
+        
+        # Push send request to background thread to avoid blocking the UI
+        self.send_queue.put((event_name, bytes(data)))
     
     def send_custom_hex(self):
         """Send custom hex data."""
@@ -291,6 +309,10 @@ class SimpleSerialSimulator:
     def on_closing(self):
         """Handle window closing."""
         self.disconnect_serial()
+        # Stop send loop thread gracefully
+        self.send_queue.put(None)
+        if self._send_thread.is_alive():
+            self._send_thread.join(timeout=1)
         self.root.destroy()
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Configuration loader utilities."""
+"""Tiện ích nạp cấu hình từ tệp YAML/JSON cho ứng dụng."""
 
 from __future__ import annotations
 
@@ -27,10 +27,12 @@ from .models import (
 
 
 def _normalize_path(path: Path | str) -> Path:
+    """Chuẩn hóa tham số đường dẫn thành đối tượng Path."""
     return path if isinstance(path, Path) else Path(path)
 
 
 def _load_raw_config(config_path: Path) -> Dict[str, Any]:
+    """Đọc tệp cấu hình ở dạng thô, hỗ trợ YAML hoặc JSON."""
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found at {config_path}")
 
@@ -46,7 +48,7 @@ def _load_raw_config(config_path: Path) -> Dict[str, Any]:
 
 
 def load_config(config_path: Path | str) -> Config:
-    """Load configuration file and construct Config dataclass."""
+    """Nạp tệp cấu hình và dựng đối tượng Config hoàn chỉnh."""
 
     config_path = _normalize_path(config_path)
     raw = _load_raw_config(config_path)
@@ -76,6 +78,7 @@ def load_config(config_path: Path | str) -> Config:
 
 
 def _load_roi_config(raw_roi: Any) -> RoiConfig:
+    """Tạo RoiConfig từ dữ liệu thô trong tệp cấu hình."""
     if raw_roi is None:
         return RoiConfig()
 
@@ -94,6 +97,7 @@ def _load_roi_config(raw_roi: Any) -> RoiConfig:
 
 
 def _load_control_config(raw_root: Dict[str, Any], defaults: ControlConfig) -> ControlConfig:
+    """Xây dựng cấu hình khối điều khiển, kết hợp dữ liệu mới và mặc định."""
     control_raw = dict(raw_root.get("control", {})) if isinstance(raw_root.get("control"), dict) else {}
 
     serial_section = control_raw.get("serial")
@@ -115,14 +119,14 @@ def _load_control_config(raw_root: Dict[str, Any], defaults: ControlConfig) -> C
 
 
 def _load_serial_config(raw_serial: Any, defaults: SerialLinkConfig) -> SerialLinkConfig:
-    """Load single serial configuration for RS485 bus."""
+    """Nạp cấu hình nối tiếp đơn lẻ cho bus điều khiển."""
     if not isinstance(raw_serial, dict) or not raw_serial:
         return defaults
     return SerialLinkConfig(**raw_serial)
 
 
 def _load_serial_topology(raw_serial: Any, defaults: SerialTopologyConfig) -> SerialTopologyConfig:
-    """Legacy function for backward compatibility."""
+    """Hàm tương thích ngược: nạp cấu hình sơ đồ nối tiếp actor/arm."""
     if not isinstance(raw_serial, dict) or not raw_serial:
         return defaults
 

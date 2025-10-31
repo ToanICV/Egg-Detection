@@ -1,5 +1,5 @@
 camera:
-  device_index: 0
+  device_index: 'tests/eggs.jpeg'
   resolution: [640, 480]
   fps: 25
   reconnect_delay_ms: 2000
@@ -20,13 +20,14 @@ logging:
 
 app:
   enable_overlay: true
+  detection_publish_interval_ms: 1000
   roi:
     top_left: [0.1, 0.1]
     bottom_right: [0.9, 0.9]
 
 control:
   serial:
-    port: "COM14"
+    port: "COM20"
     baudrate: 115200
     ack_timeout_ms: 700
     response_timeout_ms: 1200

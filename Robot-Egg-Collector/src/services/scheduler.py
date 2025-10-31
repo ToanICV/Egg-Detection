@@ -1,4 +1,4 @@
-"""Command scheduler emitting timer events."""
+"""Bộ lập lịch phát sinh các sự kiện hẹn giờ cho hệ thống điều khiển."""
 
 from __future__ import annotations
 
@@ -15,25 +15,30 @@ logger = logging.getLogger("services.scheduler")
 
 @dataclass
 class _BaseTask:
+    """Cấu trúc lưu trữ thông tin cho một tác vụ hẹn giờ chạy trên thread riêng."""
+
     timer_id: TimerId
     callback: Callable[[], None]
     thread: threading.Thread
     stop_event: threading.Event
 
     def cancel(self) -> None:
+        """Dừng thread của tác vụ và chờ thoát an toàn trong một giây."""
         self.stop_event.set()
         self.thread.join(timeout=1.0)
 
 
 class CommandScheduler:
-    """Manages recurring and one-shot timers publishing events on the bus."""
+    """Quản lý các bộ hẹn giờ một lần và lặp lại, sau đó phát sự kiện lên bus."""
 
     def __init__(self, bus: EventBus) -> None:
+        """Khởi tạo bộ lập lịch với tham chiếu tới EventBus dùng để phát sự kiện."""
         self._bus = bus
         self._tasks: Dict[TimerId, _BaseTask] = {}
         self._lock = threading.Lock()
 
     def start_interval(self, timer_id: TimerId, interval_s: float) -> None:
+        """Bắt đầu một bộ đếm lặp lại và phát TimerEvent theo chu kỳ."""
         with self._lock:
             self.cancel(timer_id)
             stop_event = threading.Event()
@@ -54,6 +59,7 @@ class CommandScheduler:
             task.thread.start()
 
     def schedule_once(self, timer_id: TimerId, delay_s: float) -> None:
+        """Đặt lịch một sự kiện đơn lẻ sau khoảng trễ cho trước."""
         with self._lock:
             self.cancel(timer_id)
             stop_event = threading.Event()
@@ -74,12 +80,14 @@ class CommandScheduler:
             task.thread.start()
 
     def cancel(self, timer_id: TimerId) -> None:
+        """Hủy bỏ và giải phóng tài nguyên liên quan tới một timer cụ thể."""
         with self._lock:
             task = self._tasks.pop(timer_id, None)
         if task:
             task.cancel()
 
     def shutdown(self) -> None:
+        """Dừng toàn bộ timer đang chạy khi hệ thống tắt."""
         with self._lock:
             timer_ids = list(self._tasks.keys())
         for timer_id in timer_ids:

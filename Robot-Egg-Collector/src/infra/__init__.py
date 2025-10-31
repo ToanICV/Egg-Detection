@@ -1,4 +1,4 @@
-"""Infrastructure helpers such as logging and exception handling."""
+"""Các tiện ích hạ tầng như logging và xử lý ngoại lệ."""
 
 from .exceptions import install_exception_hook
 from .logging import configure_logging

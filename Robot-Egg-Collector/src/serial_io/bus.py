@@ -1,4 +1,4 @@
-"""Shared serial bus supporting multi-drop devices on a single COM port."""
+"""Bus nối tiếp dùng chung để phục vụ nhiều thiết bị trên cùng cổng COM."""
 
 from __future__ import annotations
 
@@ -22,15 +22,18 @@ logger = logging.getLogger("serial.bus")
 
 @dataclass
 class _PendingWait:
+    """Trạng thái chờ phản hồi phù hợp với predicate khi gửi yêu cầu."""
+
     predicate: Callable[[DecodedFrame], bool]
     event: threading.Event = field(default_factory=threading.Event)
     result: DecodedFrame | None = None
 
 
 class SharedSerialBus:
-    """Manages a single serial port with shared read loop and request support."""
+    """Quản lý một cổng nối tiếp duy nhất và chia sẻ cho nhiều thiết bị con."""
 
     def __init__(self, config: SerialLinkConfig) -> None:
+        """Cấu hình bus nối tiếp dùng chung dựa trên thông số cổng và tốc độ."""
         self._config = config
         self._serial: Optional[serial.Serial] = None
         self._serial_lock = threading.Lock()
@@ -51,6 +54,7 @@ class SharedSerialBus:
     # Lifecycle -----------------------------------------------------------------
 
     def start(self) -> None:
+        """Tăng bộ đếm sử dụng và khởi động thread đọc nếu đây là khách đầu tiên."""
         with self._usage_lock:
             self._usage_count += 1
             if self._usage_count > 1:
@@ -60,6 +64,7 @@ class SharedSerialBus:
             self._start_reader_thread()
 
     def stop(self) -> None:
+        """Giảm bộ đếm sử dụng; dừng hoàn toàn khi không còn thành phần nào dùng chung."""
         with self._usage_lock:
             if self._usage_count == 0:
                 return
@@ -79,6 +84,7 @@ class SharedSerialBus:
         logger.info("Shared serial bus on %s stopped", self._config.port)
 
     def shutdown(self) -> None:
+        """Buộc dừng ngay lập tức bất kể còn ai đang sử dụng bus."""
         with self._usage_lock:
             self._usage_count = 0
         if self._stop_event:
@@ -93,6 +99,7 @@ class SharedSerialBus:
     # Listener management --------------------------------------------------------
 
     def register_listener(self, callback: Callable[[DecodedFrame], None]) -> int:
+        """Đăng ký callback nhận khung dữ liệu trạng thái; trả về mã listener."""
         with self._listeners_lock:
             listener_id = self._next_listener_id
             self._next_listener_id += 1
@@ -100,12 +107,14 @@ class SharedSerialBus:
             return listener_id
 
     def unregister_listener(self, listener_id: int) -> None:
+        """Hủy đăng ký callback theo mã đã cấp."""
         with self._listeners_lock:
             self._listeners.pop(listener_id, None)
 
     # Request/response -----------------------------------------------------------
 
     def request(self, frame: bytes, predicate: Callable[[DecodedFrame], bool], timeout_s: float) -> DecodedFrame | None:
+        """Gửi khung dữ liệu và chờ phản hồi thỏa predicate trong thời gian quy định."""
         waiter = self._register_wait(predicate)
         try:
             self.send_frame(frame)
@@ -115,6 +124,7 @@ class SharedSerialBus:
         return self._wait_for(waiter, timeout_s)
 
     def send_frame(self, frame: bytes) -> None:
+        """Gửi khung dữ liệu xuống cổng nối tiếp; tự mở cổng nếu cần."""
         if not self._ensure_serial():
             raise SerialException(f"Unable to open serial port {self._config.port}")
         assert self._serial is not None
@@ -131,12 +141,14 @@ class SharedSerialBus:
     # Internal helpers -----------------------------------------------------------
 
     def _start_reader_thread(self) -> None:
+        """Bắt đầu thread đọc nền nếu cổng có thể mở (hoặc để thread tự thử lại)."""
         if not self._ensure_serial():
             logger.warning("Bus %s: initial open failed; reader thread will retry.", self._config.port)
         self._reader_thread = threading.Thread(target=self._reader_loop, name=f"SerialBus-{self._config.port}", daemon=True)
         self._reader_thread.start()
 
     def _reader_loop(self) -> None:
+        """Vòng lặp nền đọc dữ liệu, giải mã khung và phân phối cho người nghe."""
         assert self._stop_event is not None
         stop_event = self._stop_event
         buffer = self._buffer
@@ -169,6 +181,7 @@ class SharedSerialBus:
         logger.debug("Serial bus reader for %s exiting.", self._config.port)
 
     def _dispatch_frame(self, frame: DecodedFrame) -> None:
+        """Đánh thức các yêu cầu đang chờ, sau đó gửi khung tới listener chung."""
         handled = False
         with self._pending_lock:
             for wait in list(self._pending_waits):
@@ -193,17 +206,20 @@ class SharedSerialBus:
                     logger.exception("Bus listener error on %s.", self._config.port)
 
     def _register_wait(self, predicate: Callable[[DecodedFrame], bool]) -> _PendingWait:
+        """Tạo đối tượng chờ phản hồi theo predicate và thêm vào hàng đợi."""
         wait = _PendingWait(predicate=predicate)
         with self._pending_lock:
             self._pending_waits.append(wait)
         return wait
 
     def _cancel_wait(self, waiter: _PendingWait) -> None:
+        """Hủy yêu cầu chờ trong trường hợp timeout hoặc lỗi."""
         with self._pending_lock:
             if waiter in self._pending_waits:
                 self._pending_waits.remove(waiter)
 
     def _wait_for(self, waiter: _PendingWait, timeout_s: float) -> DecodedFrame | None:
+        """Chờ tới khi predicate thỏa hoặc hết thời gian, trả về khung nếu có."""
         triggered = waiter.event.wait(timeout_s)
         if not triggered:
             self._cancel_wait(waiter)
@@ -211,6 +227,7 @@ class SharedSerialBus:
         return waiter.result
 
     def _ensure_serial(self) -> bool:
+        """Đảm bảo cổng nối tiếp đã mở, mở mới khi cần thiết."""
         if self._serial and self._serial.is_open:
             return True
         try:
@@ -230,6 +247,7 @@ class SharedSerialBus:
             return False
 
     def _close_serial(self) -> None:
+        """Đóng cổng nối tiếp và làm sạch trạng thái nội bộ."""
         if self._serial and self._serial.is_open:
             logger.info("Bus %s closing serial port.", self._config.port)
             self._serial.close()

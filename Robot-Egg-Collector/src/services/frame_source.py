@@ -1,4 +1,4 @@
-"""Frame acquisition helpers."""
+"""Thành phần lấy khung hình phục vụ pipeline nhận diện."""
 
 from __future__ import annotations
 
@@ -17,20 +17,23 @@ logger = logging.getLogger("services.frame_source")
 
 
 class FrameSource:
-    """Common interface for frame producers."""
+    """Giao diện trừu tượng cho mọi nguồn cấp khung hình."""
 
     def start(self) -> None:
+        """Bắt đầu thu nhận dữ liệu hình ảnh."""
         raise NotImplementedError
 
     def read(self, timeout_s: float = 1.0) -> tuple[bool, Optional[np.ndarray]]:
+        """Đọc khung hình tiếp theo với thời gian chờ tùy chọn."""
         raise NotImplementedError
 
     def stop(self) -> None:
+        """Dừng nguồn và giải phóng tài nguyên."""
         raise NotImplementedError
 
 
 class VideoCaptureSource(FrameSource):
-    """Background reader for cv2.VideoCapture to avoid UI freezes."""
+    """Đọc khung hình từ cv2.VideoCapture trên thread nền tránh block giao diện."""
 
     def __init__(
         self,
@@ -40,6 +43,7 @@ class VideoCaptureSource(FrameSource):
         fps: int,
         reopen_delay_s: float = 1.0,
     ) -> None:
+        """Khởi tạo nguồn camera với thiết bị, độ phân giải và FPS mong muốn."""
         self._device = device
         self._width = width
         self._height = height
@@ -51,6 +55,7 @@ class VideoCaptureSource(FrameSource):
         self._cap: Optional[cv2.VideoCapture] = None
 
     def start(self) -> None:
+        """Khởi động thread đọc camera nếu chưa chạy."""
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -58,6 +63,7 @@ class VideoCaptureSource(FrameSource):
         self._thread.start()
 
     def read(self, timeout_s: float = 1.0) -> tuple[bool, Optional[np.ndarray]]:
+        """Trả về khung hình mới nhất đã được thread nền thu thập."""
         try:
             frame = self._queue.get(timeout=timeout_s)
             return True, frame
@@ -65,6 +71,7 @@ class VideoCaptureSource(FrameSource):
             return False, None
 
     def stop(self) -> None:
+        """Dừng thread nền và đóng thiết bị camera."""
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=2.0)
@@ -76,6 +83,7 @@ class VideoCaptureSource(FrameSource):
     # Internal -----------------------------------------------------------------
 
     def _open_capture(self) -> bool:
+        """Mở lại thiết bị camera và thiết lập thông số mong muốn."""
         cap = cv2.VideoCapture(self._device)
         if not cap.isOpened():
             logger.error("Unable to open video source %s", self._device)
@@ -90,6 +98,7 @@ class VideoCaptureSource(FrameSource):
         return True
 
     def _run(self) -> None:
+        """Vòng lặp nền liên tục đọc khung hình và đẩy vào hàng đợi."""
         retry_delay = self._reopen_delay_s
         while not self._stop_event.is_set():
             if self._cap is None:
@@ -115,13 +124,15 @@ class VideoCaptureSource(FrameSource):
 
 
 class StaticImageSource(FrameSource):
-    """Single image looped as frame source."""
+    """Nguồn khung hình cố định phát lặp lại một ảnh duy nhất."""
 
     def __init__(self, image_path: Path) -> None:
+        """Nhận đường dẫn ảnh tĩnh dùng làm nguồn phát lặp lại."""
         self._image_path = image_path
         self._frame: Optional[np.ndarray] = None
 
     def start(self) -> None:
+        """Nạp ảnh tĩnh từ đĩa vào bộ nhớ."""
         frame = cv2.imread(str(self._image_path))
         if frame is None:
             raise FileNotFoundError(f"Unable to load image at {self._image_path}")
@@ -129,11 +140,13 @@ class StaticImageSource(FrameSource):
         logger.info("StaticImageSource loaded image %s", self._image_path)
 
     def read(self, timeout_s: float = 1.0) -> tuple[bool, Optional[np.ndarray]]:
+        """Trả về bản sao của ảnh đã nạp để tương thích với giao diện FrameSource."""
         if self._frame is None:
             return False, None
         return True, self._frame.copy()
 
     def stop(self) -> None:
+        """Giải phóng bộ nhớ chứa ảnh tĩnh."""
         self._frame = None
 
 

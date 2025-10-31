@@ -1,4 +1,4 @@
-"""Utilities for encoding/decoding MCU serial frames."""
+"""Tiện ích mã hóa/giải mã khung dữ liệu nối tiếp từ MCU."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ logger = logging.getLogger("serial.codec")
 
 @dataclass(frozen=True)
 class DecodedFrame:
-    """Represents a frame parsed from the serial stream."""
+    """Đại diện cho một khung đã giải mã từ luồng nối tiếp."""
 
     raw: bytes
     group: int
@@ -20,11 +20,12 @@ class DecodedFrame:
     crc_ok: bool
 
     def payload_as_ints(self) -> tuple[int, ...]:
+        """Trả về payload dưới dạng tuple số nguyên thuận tiện cho so sánh."""
         return tuple(b for b in self.payload)
 
 
 class FrameCodec:
-    """Encodes/decodes frames based on the documented MCU protocol."""
+    """Mã hóa và giải mã khung dựa trên giao thức MCU đã công bố."""
 
     HEADER = b"\x24\x24"
     FOOTER = b"\x23\x23"
@@ -32,6 +33,7 @@ class FrameCodec:
 
     @classmethod
     def compute_crc(cls, data: Sequence[int]) -> int:
+        """Tính tổng kiểm tra CRC đơn giản cho một chuỗi byte."""
         crc = 0
         for byte in data:
             crc = (crc + (byte & 0xFF)) & 0xFF
@@ -39,6 +41,7 @@ class FrameCodec:
 
     @classmethod
     def encode(cls, payload: Sequence[int], length: int | None = None) -> bytes:
+        """Đóng gói payload thành khung hợp lệ kèm header, CRC và footer."""
         payload_bytes = [byte & 0xFF for byte in payload]
         if length is None:
             length = len(payload_bytes) + 3  # payload + crc + footer(2)
@@ -54,6 +57,7 @@ class FrameCodec:
 
     @classmethod
     def extract_frames(cls, buffer: bytearray) -> list[DecodedFrame]:
+        """Tách các khung hoàn chỉnh khỏi bộ đệm nhận."""
         frames: list[DecodedFrame] = []
         while True:
             if len(buffer) < cls.MIN_FRAME_SIZE:
@@ -125,6 +129,7 @@ class FrameCodec:
 
     @classmethod
     def _find_header(cls, buffer: bytearray) -> int:
+        """Tìm vị trí header trong bộ đệm; trả về -1 nếu không thấy."""
         for idx in range(len(buffer) - 1):
             if buffer[idx] == cls.HEADER[0] and buffer[idx + 1] == cls.HEADER[1]:
                 return idx
@@ -132,6 +137,7 @@ class FrameCodec:
 
     @classmethod
     def _find_footer(cls, buffer: bytearray, start: int) -> int:
+        """Tìm vị trí footer kể từ chỉ số start; trả về -1 nếu không tồn tại."""
         for idx in range(start, len(buffer) - 1):
             if buffer[idx] == cls.FOOTER[0] and buffer[idx + 1] == cls.FOOTER[1]:
                 return idx

@@ -1,4 +1,4 @@
-"""Detector interface definitions."""
+"""Định nghĩa giao diện và cấu trúc dữ liệu cho bộ phát hiện."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from core.entities import Detection, FrameData
 
 @dataclass
 class DetectionResult:
-    """Container for detector outputs."""
+    """Gói kết quả suy luận, bao gồm frame gốc và danh sách phát hiện."""
 
     frame: FrameData
     detections: Sequence[Detection]
@@ -22,12 +22,12 @@ class DetectionResult:
 
 
 class DetectorBase(abc.ABC):
-    """Interface for detection engines."""
+    """Lớp cơ sở cho mọi bộ phát hiện đối tượng."""
 
     @abc.abstractmethod
     def warmup(self) -> None:
-        """Prepare model (load weights, allocate resources)."""
+        """Khởi động mô hình: nạp trọng số, cấp phát bộ nhớ, chạy thử."""
 
     @abc.abstractmethod
     def detect(self, frame: FrameData) -> DetectionResult:
-        """Run detection on provided frame."""
+        """Chạy suy luận trên khung hình đầu vào và trả về kết quả."""

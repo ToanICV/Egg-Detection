@@ -1,4 +1,4 @@
-"""Serial communication service built on pyserial."""
+"""Dịch vụ giao tiếp nối tiếp dựa trên thư viện pyserial."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger("serial.sender")
 
 
 class SerialSender:
-    """Asynchronous serial sender for detection coordinates."""
+    """Thành phần gửi dữ liệu nhận diện qua cổng nối tiếp một cách bất đồng bộ."""
 
     _BINARY_HEADER = 0x2424
     _BINARY_FOOTER = 0x2323
@@ -34,6 +34,7 @@ class SerialSender:
         on_error: Optional[Callable[[str], None]] = None,
         on_status_change: Optional[Callable[[bool], None]] = None,
     ) -> None:
+        """Cấu hình serial sender kèm callback báo lỗi và trạng thái đường truyền."""
         self._config = config
         self._queue: "queue.Queue[bytes]" = queue.Queue(maxsize=64)
         self._send_thread: Optional[threading.Thread] = None
@@ -46,6 +47,7 @@ class SerialSender:
         self._send_enabled.set()
 
     def start(self) -> None:
+        """Khởi động các thread gửi và nhận, đồng thời mở cổng khi cần."""
         if self._send_thread and self._send_thread.is_alive():
             logger.debug("Serial sender already running")
             return
@@ -58,6 +60,7 @@ class SerialSender:
         logger.info("Serial sender threads started")
 
     def stop(self) -> None:
+        """Dừng thread nền và đóng cổng nối tiếp."""
         self._stop_event.set()
         if self._send_thread:
             self._send_thread.join(timeout=2.0)
@@ -68,6 +71,7 @@ class SerialSender:
         self._close_port()
 
     def send_detections(self, detections: Iterable[Detection], frame: FrameData) -> None:
+        """Xếp payload chứa tọa độ nhận diện vào hàng đợi gửi."""
         if not self._send_enabled.is_set():
             logger.debug("Sending disabled by MCU command; detections dropped.")
             return
@@ -80,6 +84,7 @@ class SerialSender:
             self._notify_error(message)
 
     def _send_worker(self) -> None:
+        """Thread nền lấy payload từ hàng đợi và ghi xuống cổng nối tiếp."""
         reconnect_delay = self._config.reconnect_delay_ms / 1000.0
         while not self._stop_event.is_set():
             try:
@@ -107,6 +112,7 @@ class SerialSender:
                 self._requeue_payload(payload)
 
     def _requeue_payload(self, payload: bytes) -> None:
+        """Đưa payload trở lại hàng đợi nếu việc gửi thất bại tạm thời."""
         try:
             self._queue.put_nowait(payload)
         except queue.Full:
@@ -115,6 +121,7 @@ class SerialSender:
             self._notify_error(message)
 
     def _receive_worker(self) -> None:
+        """Thread nền đọc phản hồi từ MCU để nhận lệnh điều khiển truyền nhận."""
         buffer = bytearray()
         reconnect_delay = self._config.reconnect_delay_ms / 1000.0
         while not self._stop_event.is_set():
@@ -138,6 +145,7 @@ class SerialSender:
             self._parse_commands(buffer)
 
     def _parse_commands(self, buffer: bytearray) -> None:
+        """Giải mã các khung lệnh điều khiển từ MCU để bật/tắt việc gửi dữ liệu."""
         minimum_length = 7  # header (2) + command (1) + value (1) + CRC (1) + footer (2)
         while True:
             if len(buffer) < minimum_length:
@@ -176,6 +184,7 @@ class SerialSender:
             self._handle_command(command, value)
 
     def _handle_command(self, command: int, value: int) -> None:
+        """Thực thi lệnh nhận được, chủ yếu bật/tắt việc gửi tọa độ."""
         if command != 0x02:
             logger.debug("Unknown command 0x%02X (value 0x%02X) ignored.", command, value)
             return
@@ -193,6 +202,7 @@ class SerialSender:
             logger.debug("Unsupported command value 0x%02X.", value)
 
     def _ensure_port(self) -> bool:
+        """Mở cổng nối tiếp nếu chưa sẵn sàng và thông báo trạng thái kết nối."""
         if self._serial and self._serial.is_open:
             return True
         try:
@@ -213,6 +223,7 @@ class SerialSender:
             return False
 
     def _close_port(self) -> None:
+        """Đóng cổng nối tiếp và phát tín hiệu trạng thái xuống callback."""
         if self._serial and self._serial.is_open:
             logger.info("Closing serial port %s", self._config.port)
             self._serial.close()
@@ -220,6 +231,7 @@ class SerialSender:
         self._notify_status(False)
 
     def _format_payload(self, detections: Iterable[Detection], frame: FrameData) -> bytes:
+        """Chuyển danh sách phát hiện thành dữ liệu gửi theo định dạng cấu hình."""
         detections_list = list(detections)
         if self._config.payload_format == "csv":
             rows = [
@@ -249,6 +261,7 @@ class SerialSender:
         return self._build_binary_frame(detections_list)
 
     def _build_binary_frame(self, detections: Sequence[Detection]) -> bytes:
+        """Sinh khung nhị phân theo giao thức MCU, gồm header, CRC và footer."""
         frame_bytes = bytearray()
         frame_bytes.extend(struct.pack(">H", self._BINARY_HEADER))
         frame_bytes.append(self._BINARY_DATA_TYPE & 0xFF)
@@ -279,6 +292,7 @@ class SerialSender:
 
     @staticmethod
     def _to_uint16(value: float) -> int:
+        """Giới hạn giá trị về khoảng 0-65535 và làm tròn để phù hợp khuôn dạng 16 bit."""
         int_value = int(round(value))
         if int_value < 0:
             int_value = 0
@@ -287,10 +301,12 @@ class SerialSender:
         return int_value
 
     def _clear_queue(self) -> None:
+        """Xóa sạch hàng đợi gửi khi MCU yêu cầu tạm dừng truyền dữ liệu."""
         with self._queue.mutex:
             self._queue.queue.clear()
 
     def _notify_error(self, message: str) -> None:
+        """Gọi callback báo lỗi nếu người dùng đăng ký."""
         if self._on_error:
             try:
                 self._on_error(message)
@@ -298,6 +314,7 @@ class SerialSender:
                 logger.exception("Serial error callback failed.")
 
     def _notify_status(self, status: bool) -> None:
+        """Thông báo cho callback bên ngoài về tình trạng kết nối cổng nối tiếp."""
         if self._on_status_change:
             try:
                 self._on_status_change(status)

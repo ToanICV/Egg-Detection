@@ -1,4 +1,4 @@
-"""Application entrypoint for EggDetection (OpenCV UI)."""
+"""Điểm vào chính của ứng dụng Robot Egg Collector với giao diện OpenCV."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ logger = logging.getLogger("app.main")
 
 
 def parse_args() -> argparse.Namespace:
+    """Phân tích tham số dòng lệnh cho công cụ điều khiển và hiển thị."""
     parser = argparse.ArgumentParser(description="Egg detection console interface (cv2).")
     parser.add_argument(
         "--config",
@@ -48,6 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def draw_overlay(frame: np.ndarray, detections: Sequence[Detection], current_state: str = None, fps: float = 0.0) -> np.ndarray:
+    """Vẽ thông tin phát hiện, trạng thái máy trạng thái và FPS lên khung hình."""
     annotated = frame.copy()
     
     # Draw detection boxes
@@ -142,6 +144,7 @@ def draw_overlay(frame: np.ndarray, detections: Sequence[Detection], current_sta
 
 
 def create_frame(frame_id: int, image: np.ndarray, source: str) -> FrameData:
+    """Tạo đối tượng FrameData với dấu thời gian UTC và thông tin nguồn."""
     return FrameData(
         image=image,
         timestamp=datetime.now(timezone.utc),
@@ -151,6 +154,7 @@ def create_frame(frame_id: int, image: np.ndarray, source: str) -> FrameData:
 
 
 def compute_roi_pixels(config_roi, frame_width: int, frame_height: int) -> Tuple[int, int, int, int]:
+    """Tính toán tọa độ pixel cho ROI dựa trên tỷ lệ cấu hình và kích thước ảnh."""
     top_left_ratio, bottom_right_ratio = config_roi.as_tuple()
     x1 = int(round(top_left_ratio[0] * frame_width))
     y1 = int(round(top_left_ratio[1] * frame_height))
@@ -174,6 +178,7 @@ def filter_detections_in_roi(
     detections: Sequence[Detection],
     roi: Tuple[int, int, int, int],
 ) -> list[Detection]:
+    """Lọc các phát hiện nằm trong vùng ROI đã quy đổi sang pixel."""
     x1, y1, x2, y2 = roi
     filtered: list[Detection] = []
     for det in detections:
@@ -184,6 +189,7 @@ def filter_detections_in_roi(
 
 
 def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
+    """Khởi động toàn bộ pipeline: camera, detector, bus sự kiện và vòng lặp UI."""
     install_exception_hook()
 
     width, height = config.camera.resolution
@@ -203,6 +209,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
     bus_registry: dict[str, SharedSerialBus] = {}
 
     def _get_bus(link_cfg) -> SharedSerialBus:
+        """Lấy hoặc khởi tạo SharedSerialBus cho cổng RS485 được yêu cầu."""
         bus = bus_registry.get(link_cfg.port)
         if bus is None:
             bus = SharedSerialBus(link_cfg)
@@ -230,35 +237,59 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
         
         # Fallback mock serial for testing when hardware unavailable
         class MockSerial:
-            def start(self): 
+            """Giả lập liên kết nối tiếp khi phần cứng không khả dụng."""
+
+            def start(self):
+                """Ghi log cho biết mô phỏng bắt đầu."""
                 logger.info("Mock serial started (fallback mode)")
                 return True
-            def shutdown(self): 
-                logger.info("Mock serial shutdown")  
-            def read_status(self): 
+
+            def shutdown(self):
+                """Thông báo mô phỏng đã dừng."""
+                logger.info("Mock serial shutdown")
+
+            def read_status(self):
+                """Không trả về trạng thái thực vì đang chạy chế độ mô phỏng."""
                 return None
+
             def move_forward(self):
+                """Ghi log lệnh tiến trong chế độ mô phỏng."""
                 logger.info("Mock move_forward command")
                 return True
+
             def stop(self):
-                logger.info("Mock stop command") 
+                """Ghi log lệnh dừng trong chế độ mô phỏng."""
+                logger.info("Mock stop command")
                 return True
+
             def turn(self):
+                """Ghi log lệnh quay mô phỏng."""
                 logger.info("Mock turn command")
                 return True
+
             def pick(self, x_mm, y_mm):
+                """Mô phỏng lệnh nhặt tại tọa độ đã chỉ định."""
                 logger.info(f"Mock pick command at ({x_mm}, {y_mm})")
                 return True
+
             def stop_motion(self):
+                """Mô phỏng lệnh yêu cầu xe dừng lại."""
                 logger.info("Mock stop_motion command")
                 return True
         
         class MockScheduler:
+            """Bộ lập lịch giả lập dùng khi không có scheduler thực."""
+
             def start_interval(self, timer_id, interval_s):
+                """Ghi log về việc 'kích hoạt' bộ hẹn giờ."""
                 logger.info(f"Mock scheduler started timer {timer_id}")
+
             def cancel(self, timer_id):
+                """Ghi log khi hủy bộ hẹn giờ mô phỏng."""
                 logger.info(f"Mock scheduler cancelled timer {timer_id}")
+
             def shutdown(self):
+                """Thông báo kết thúc scheduler mô phỏng."""
                 logger.info("Mock scheduler shutdown")
         
         actor_link = MockSerial()
@@ -286,6 +317,8 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
     fps_timer = time.time()
     current_fps = 0.0
     roi_pixels: Tuple[int, int, int, int] | None = None
+    detection_publish_interval_s = max(0.001, config.app.detection_publish_interval_ms / 1000.0)
+    last_detection_publish_ts = 0.0
 
     # Fix for cv2.imshow lag: start engine asynchronously
     engine_started = False
@@ -307,6 +340,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
             # Start engine asynchronously after first few frames to avoid blocking cv2.imshow
             if not engine_startup_attempted and frame_id > 3:
                 def start_engine_async():
+                    """Khởi động ControlEngine trên thread phụ để tránh block UI."""
                     nonlocal engine_started
                     try:
                         logger.info("🔧 Starting control engine asynchronously...")
@@ -332,6 +366,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
                         print("🔧 DEBUG: Using threading timers instead of scheduler")
                         
                         def actor_status_timer():
+                            """Thread mô phỏng việc poll trạng thái xe trong chế độ mô phỏng."""
                             while True:
                                 try:
                                     time.sleep(1.0)  # 1 second interval
@@ -342,6 +377,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
                                     break
                         
                         def arm_status_timer():
+                            """Thread mô phỏng việc poll trạng thái cánh tay trong chế độ mô phỏng."""
                             while True:
                                 try:
                                     time.sleep(1.0)  # 1 second interval  
@@ -402,20 +438,26 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
                 filter_detections_in_roi(result.detections, roi_pixels) if roi_pixels else list(result.detections)
             )
 
-            # Only publish events if engine is started
-            if engine_started:
-                event_bus.publish(DetectionEvent(detections=active_detections, frame=result.frame))
-
-            # Get current state from engine
-            current_state = None
+            # Determine whether detection events should be published (throttled)
+            publish_detection = False
+            current_state = "NotStarted"
             if engine_started and hasattr(engine, 'state_machine'):
                 try:
+                    state_machine = engine.state_machine
+                    publish_detection = bool(
+                        getattr(state_machine, 'is_scan_and_move', False)
+                        or getattr(state_machine, 'is_scan_only', False)
+                    )
                     current_state = engine._state_name()
                 except Exception as e:
                     current_state = "Error"
+                    publish_detection = False
                     logger.warning("Failed to get current state: %s", e)
-            else:
-                current_state = "NotStarted"
+
+            now = time.time()
+            if publish_detection and (now - last_detection_publish_ts) >= detection_publish_interval_s:
+                event_bus.publish(DetectionEvent(detections=active_detections, frame=result.frame))
+                last_detection_publish_ts = now
             
             display_frame = frame.copy()
             if config.app.enable_overlay:
@@ -462,6 +504,7 @@ def bootstrap(config: Config, window_name: str, no_window: bool) -> None:
 
 
 def _initialize_frame_source(config: Config, width: int, height: int) -> tuple[FrameSource, str]:
+    """Tạo nguồn khung hình phù hợp (camera, ảnh tĩnh) dựa trên cấu hình."""
     device = config.camera.device_index
     if isinstance(device, str):
         path = Path(device)
@@ -476,6 +519,7 @@ def _initialize_frame_source(config: Config, width: int, height: int) -> tuple[F
 
 
 def main() -> None:
+    """Điểm vào dòng lệnh: nạp cấu hình, cấu hình logging và chạy bootstrap."""
     args = parse_args()
     try:
         config = load_config(args.config)

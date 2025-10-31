@@ -1,4 +1,4 @@
-"""Service layer exports for EggDetection control system."""
+"""Các thành phần tầng dịch vụ dùng chung cho hệ thống điều khiển."""
 
 from .event_bus import EventBus
 from .events import (

@@ -1,4 +1,4 @@
-"""Entity definitions for domain objects."""
+"""Định nghĩa các thực thể cốt lõi dùng trong hệ thống."""
 
 from .detection import BoundingBox, Detection
 from .frame import FrameData

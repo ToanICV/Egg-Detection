@@ -1,4 +1,4 @@
-"""Dataclass definitions for application configuration."""
+"""Định nghĩa các dataclass cấu hình cho ứng dụng Robot Egg Collector."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Literal, Optional, Sequence
 
 @dataclass(frozen=True)
 class CameraConfig:
-    """Camera related configuration."""
+    """Thiết lập cho camera thu hình (thiết bị, độ phân giải, FPS, ...)."""
 
     device_index: int = 0
     resolution: Sequence[int] = (640, 480)
@@ -20,7 +20,7 @@ class CameraConfig:
 
 @dataclass(frozen=True)
 class YoloConfig:
-    """YOLO detector configuration."""
+    """Cấu hình dành cho bộ phát hiện YOLO."""
 
     weights_path: Path = Path("weights/egg_detector.pt")
     confidence_threshold: float = 0.4
@@ -31,13 +31,14 @@ class YoloConfig:
     half: bool = False
 
     def resolved_weights(self) -> Path:
+        """Chuẩn hóa đường dẫn tới file trọng số trên hệ thống."""
         path = self.weights_path if isinstance(self.weights_path, Path) else Path(self.weights_path)
         return path.expanduser().resolve()
 
 
 @dataclass(frozen=True)
 class SerialConfig:
-    """Legacy serial communication configuration used by standalone sender."""
+    """Cấu hình giao tiếp nối tiếp dùng cho bộ phát tọa độ độc lập."""
 
     port: str = "COM3"
     baudrate: int = 115200
@@ -51,7 +52,7 @@ class SerialConfig:
 
 @dataclass(frozen=True)
 class SerialLinkConfig:
-    """Serial link configuration for control endpoints."""
+    """Cấu hình giao tiếp nối tiếp cho các thiết bị điều khiển chính."""
 
     port: str = "COM3"
     baudrate: int = 115200
@@ -67,16 +68,18 @@ class SerialLinkConfig:
 
 
 def _default_actor_serial() -> SerialLinkConfig:
+    """Tạo cấu hình mặc định cho đường nối tiếp của xe tự hành."""
     return SerialLinkConfig()
 
 
 def _default_arm_serial() -> SerialLinkConfig:
+    """Tạo cấu hình mặc định cho cánh tay, mặc định cổng COM khác với actor."""
     return SerialLinkConfig(port="COM4")
 
 
 @dataclass(frozen=True)
 class SerialTopologyConfig:
-    """Serial configuration bundle for actor and arm links."""
+    """Gói cấu hình nối tiếp cho cả xe tự hành và cánh tay."""
 
     actor: SerialLinkConfig = field(default_factory=_default_actor_serial)
     arm: SerialLinkConfig = field(default_factory=_default_arm_serial)
@@ -84,7 +87,7 @@ class SerialTopologyConfig:
 
 @dataclass(frozen=True)
 class LoggingConfig:
-    """Logging configuration."""
+    """Thiết lập ghi log: mức độ, đường dẫn, dung lượng xoay vòng."""
 
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     filepath: Path = Path("logs/app.log")
@@ -93,17 +96,19 @@ class LoggingConfig:
     console: bool = True
 
     def resolved_path(self) -> Path:
+        """Trả về đường dẫn log tuyệt đối sau khi mở rộng ~."""
         return self.filepath.expanduser().resolve()
 
 
 @dataclass(frozen=True)
 class RoiConfig:
-    """Region-of-interest configuration represented as ratios."""
+    """Thiết lập vùng quan tâm (ROI) theo tỷ lệ so với kích thước khung hình."""
 
     top_left: Sequence[float] = (0.0, 0.0)
     bottom_right: Sequence[float] = (1.0, 1.0)
 
     def as_tuple(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Chuyển ROI thành cặp tọa độ dạng tuple(float, float)."""
         return (
             (float(self.top_left[0]), float(self.top_left[1])),
             (float(self.bottom_right[0]), float(self.bottom_right[1])),
@@ -112,15 +117,16 @@ class RoiConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Application level configuration."""
+    """Cấu hình cấp ứng dụng (tùy chọn overlay, ROI,...)."""
 
     enable_overlay: bool = True
     roi: RoiConfig = field(default_factory=RoiConfig)
+    detection_publish_interval_ms: int = 1000
 
 
 @dataclass(frozen=True)
 class SchedulerConfig:
-    """Scheduler settings for timers and polling loops."""
+    """Thiết lập bộ hẹn giờ phục vụ polling và chuyển trạng thái."""
 
     actor_status_interval_ms: int = 1000
     arm_status_interval_ms: int = 1000
@@ -132,7 +138,7 @@ class SchedulerConfig:
 
 @dataclass(frozen=True)
 class BehaviourConfig:
-    """Control behaviour thresholds and limits."""
+    """Ngưỡng hành vi điều khiển: khoảng dừng, độ lệch trung tâm, số lần thử..."""
 
     distance_stop_threshold_cm: float = 30.0
     detection_center_tolerance: float = 0.2
@@ -144,7 +150,7 @@ class BehaviourConfig:
 
 @dataclass(frozen=True)
 class ControlConfig:
-    """Top-level control subsystem configuration."""
+    """Cấu hình tổng thể cho khối điều khiển (serial, scheduler, hành vi)."""
 
     serial: SerialLinkConfig = field(default_factory=lambda: SerialLinkConfig(port="COM15"))
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
@@ -153,7 +159,7 @@ class ControlConfig:
 
 @dataclass(frozen=True)
 class Config:
-    """Root configuration object."""
+    """Đối tượng cấu hình gốc tập hợp mọi nhóm thiết lập của ứng dụng."""
 
     camera: CameraConfig = field(default_factory=CameraConfig)
     yolo: YoloConfig = field(default_factory=YoloConfig)

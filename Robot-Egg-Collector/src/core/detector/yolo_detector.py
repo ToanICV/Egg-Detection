@@ -1,4 +1,4 @@
-"""YOLOv11 detector implementation using Ultralytics."""
+"""Triển khai bộ phát hiện YOLOv11 dựa trên thư viện Ultralytics."""
 
 from __future__ import annotations
 
@@ -24,14 +24,16 @@ logger = logging.getLogger("detector.yolo")
 
 
 class YoloDetector(DetectorBase):
-    """Detector backed by Ultralytics YOLO models."""
+    """Bộ phát hiện sử dụng mô hình YOLO của Ultralytics."""
 
     def __init__(self, config: YoloConfig) -> None:
+        """Nhận cấu hình YOLO và chuẩn bị trường nội bộ."""
         self._config = config
         self._model: YOLO | None = None
         self._names: List[str] | None = None
 
     def warmup(self) -> None:
+        """Nạp trọng số YOLO và chuẩn hóa cấu hình trước khi suy luận."""
         if self._model is not None:
             return
         logger.info("Loading YOLO weights from %s", self._config.weights_path)
@@ -54,6 +56,7 @@ class YoloDetector(DetectorBase):
             )
 
     def detect(self, frame: FrameData) -> DetectionResult:
+        """Chạy suy luận YOLO trên khung hình và trả về danh sách phát hiện."""
         self.warmup()
         assert self._model is not None
 
@@ -84,6 +87,7 @@ class YoloDetector(DetectorBase):
         )
 
     def _parse_results(self, result, frame: FrameData) -> List[Detection]:
+        """Chuyển đổi kết quả từ Ultralytics thành danh sách Detection."""
         detections: List[Detection] = []
         boxes = getattr(result, "boxes", None)
         if boxes is None or boxes.xyxy is None:
@@ -108,6 +112,7 @@ class YoloDetector(DetectorBase):
         return detections
 
     def _build_annotated_image(self, result) -> "np.ndarray | None":
+        """Sinh ảnh có vẽ bounding box phục vụ hiển thị; trả None nếu thất bại."""
         try:
             plotted = result.plot()  # returns numpy array with boxes drawn
             return plotted

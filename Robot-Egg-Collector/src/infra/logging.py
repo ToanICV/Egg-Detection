@@ -1,4 +1,4 @@
-"""Logging configuration helpers."""
+"""Các tiện ích cấu hình logging cho ứng dụng Robot Egg Collector."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from config.models import LoggingConfig
 
 
 def configure_logging(config: LoggingConfig) -> None:
-    """Setup Python logging according to provided configuration."""
+    """Thiết lập logging Python dựa trên cấu hình được cung cấp."""
 
     log_level = getattr(logging, config.level.upper(), logging.INFO)
     logging.captureWarnings(True)
@@ -40,6 +40,7 @@ def configure_logging(config: LoggingConfig) -> None:
 
 
 def _build_formatter(color: bool = False) -> logging.Formatter:
+    """Tạo formatter thống nhất cho log file và console."""
     fmt = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
     return logging.Formatter(fmt=fmt, datefmt=datefmt)

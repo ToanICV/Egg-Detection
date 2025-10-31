@@ -1,4 +1,4 @@
-"""Serial communication components."""
+"""Các thành phần phục vụ giao tiếp nối tiếp."""
 
 from .serial_sender import SerialSender
 
