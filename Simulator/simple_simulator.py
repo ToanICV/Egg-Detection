@@ -14,7 +14,7 @@ class SimpleSerialSimulator:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Simple Serial Simulator - COM15 (Send & Receive)")
-        self.root.geometry("700x600")
+        self.root.geometry("700x700")
         
         self.serial_port = None
         self.receiving = False

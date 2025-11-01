@@ -149,6 +149,17 @@ class YoloRunner:
         dt = time.perf_counter() - t0
         fps = 1.0 / dt if dt > 0 else 0.0
         self._fps_avg = fps if self._fps_avg is None else self._fps_avg * 0.9 + fps * 0.1
+        # Vẽ đường thẳng ngang tại 0.25*H màu đỏ và hai đường dọc 0.05*W, 0.95*W màu đỏ
+        try:
+            h, w = canvas.shape[:2]
+            y_line = int(0.25 * h)
+            x_left = int(0.05 * w)
+            x_right = int(0.95 * w)
+            cv2.line(canvas, (x_left, y_line), (x_right, y_line), (0, 0, 255), 1)
+            cv2.line(canvas, (x_left, y_line), (x_left, h - 1), (0, 0, 255), 1)
+            cv2.line(canvas, (x_right, y_line), (x_right, h - 1), (0, 0, 255), 1)
+        except Exception:
+            pass
         return canvas
 
     def run_loop(self, frame_queue: "queue.Queue[np.ndarray]") -> None:

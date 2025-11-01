@@ -16,6 +16,7 @@ from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 import numpy as np
+import yaml
 
 from .state_machine.controller import StateController, Event
 from .state_machine.context import RobotContext
@@ -56,6 +57,7 @@ def setup_logging(log_file: str = "robot_sm.log", console_level: int = logging.I
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run FSM + YOLO unified runner")
+    parser.add_argument("--config", type=str, default="Robot-SM/config/app.yaml", help="Path to app config YAML")
     # YOLO params
     parser.add_argument("--source", type=str, default="0", help="Camera index or video/image path")
     parser.add_argument("--image", action="store_true", help="Treat source as an image")
@@ -66,13 +68,44 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
+    # Load YAML config
+    with open(args.config, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
     # Setup logging to both console and file
-    app_logger = setup_logging()
+    log_cfg = cfg.get("logging", {})
+    app_logger = setup_logging(
+        log_cfg.get("file_path", "robot_sm.log"),
+        console_level=getattr(logging, str(log_cfg.get("console_level", "INFO")).upper(), logging.INFO),
+        file_level=getattr(logging, str(log_cfg.get("file_level", "DEBUG")).upper(), logging.DEBUG),
+    )
 
     # Init FSM controller first (ctx needs controller reference)
     fsm = StateController(ctx=None)  # type: ignore[arg-type]
-    ctx = RobotContext(controller=fsm, logger=app_logger, port="COM14", baudrate=115200)
+
+    # Serial
+    serial_cfg = cfg.get("serial", {})
+    port = serial_cfg.get("port", "COM14")
+    baudrate = int(serial_cfg.get("baudrate", 9600))
+
+    ctx = RobotContext(controller=fsm, logger=app_logger, port=port, baudrate=baudrate)
+    # Pass pick thresholds to context for decision in states
     fsm.ctx = ctx
+    fsm.ctx.pick_thresholds = cfg.get("fsm", {}).get("pick_thresholds", {})
+
+    # Vision params
+    vision_cfg = cfg.get("vision", {})
+    model = vision_cfg.get("model", "yolov8n.pt")
+    source = vision_cfg.get("source", 0)
+    image_mode = bool(vision_cfg.get("image", False))
+    imgsz = int(vision_cfg.get("imgsz", 640))
+    conf = float(vision_cfg.get("conf", 0.25))
+    iou = float(vision_cfg.get("iou", 0.45))
+    device = vision_cfg.get("device", "auto")
+    max_det = int(vision_cfg.get("max_det", 300))
+    half = bool(vision_cfg.get("half", False))
+    class_name = vision_cfg.get("class_name", None)
+    window = vision_cfg.get("window", "YOLO + FSM")
 
     # Start FSM at Idle -> then send 'start' to begin ScanAndMove
     fsm.start(sm_states.IdleState())

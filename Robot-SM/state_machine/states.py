@@ -151,13 +151,21 @@ class ScanAndMoveState(BaseState):
         if event.type == "eggs_detected":
             eggs = event.payload or []
             ctx.last_detections = eggs
-            centered = [e for e in eggs if e.get("y_norm", 0.0) >= 0.25 and e.get("y_norm", 1.0) <= 1]
-            if centered:
+            # Điều kiện chọn ứng viên theo ngưỡng cấu hình từ context
+            th = getattr(ctx, "pick_thresholds", {}) or {}
+            y_min = float(th.get("y_min_norm", 0.25))
+            x_min = float(th.get("x_min_norm", 0.05))
+            x_max = float(th.get("x_max_norm", 0.95))
+            candidates = [
+                e for e in eggs
+                if (e.get("y_norm", 0.0) > y_min) and (x_min < e.get("x_norm", 0.0) < x_max)
+            ]
+            if candidates:
                 ctx.cmd_base_stop()
-                return PickUpEggState(target=centered[0])
+                return PickUpEggState(target=candidates[0])
             
         if event.type == "obstacle_dist" and ctx.last_detections == []:
-            ctx.cmd_base_stop()
+            # ctx.cmd_base_stop() # nếu gặp vật cản thì base đã dừng sẵn rồi
             ctx.cmd_base_turn90()
             return TurnFirstState()
         return super().handle(ctx, event)
@@ -267,7 +275,7 @@ class MoveOnlyState(BaseState):
     def handle(self, ctx: Context, event: Event) -> Optional[BaseState]:
         """Hết 5s → dừng + quay 90° và sang TurnSecond."""
         if event.type == "timer" and event.payload == "move_duration":
-            ctx.cmd_base_stop()
+            # ctx.cmd_base_stop() # khi gửi lệnh turn90 thì base thay vì tịnh tiến sẽ xoay luôn, không dừng
             ctx.cmd_base_turn90()
             return TurnSecondState()
         return super().handle(ctx, event)

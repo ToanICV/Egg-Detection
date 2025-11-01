@@ -1,0 +1,39 @@
+# Cấu hình Robot-SM
+
+serial:
+  port: COM14
+  baudrate: 9600
+
+vision:
+  model: yolov8n.pt
+  source: 0          # 0=camera index, hoặc đường dẫn video/ảnh
+  image: false       # true nếu source là ảnh tĩnh
+  imgsz: 640
+  conf: 0.25
+  iou: 0.45
+  device: auto
+  max_det: 300
+  half: false
+  class_name: null   # ví dụ: egg
+  window: YOLO + FSM
+
+fsm:
+  start_on_launch: true
+  # Ngưỡng điều kiện pick trong ScanAndMove
+  pick_thresholds:
+    y_min_norm: 0.25
+    x_min_norm: 0.05
+    x_max_norm: 0.95
+
+overlay:
+  show_state: true
+  show_dist: true
+  show_eggs: true
+  guide_lines: true  # vẽ các đường tham chiếu 0.25H, 0.05W, 0.95W
+
+logging:
+  console_level: INFO
+  file_level: DEBUG
+  file_path: robot_sm.log
+  file_max_mb: 2
+  file_backups: 3
