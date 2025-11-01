@@ -42,3 +42,12 @@ Trong đó:
     - Byte4=0x01: Arm đang chuyển động;
     - Byte4=0x00: Arm đang ở vị trí chờ;
 ```
+
+
+- Cấu trúc dữ liệu phản hồi:
+Header: 0x24 0x24 
+Source: 0x06 là Arm, 0x05 là Actor
+Type: 0x04: ACK, 0x03: State
+Payload:
+CRC: (Tổng từ Header đến payload) & 0xFF
+Footer: 0x23 0x23 
