@@ -37,3 +37,11 @@ logging:
   file_path: robot_sm.log
   file_max_mb: 2
   file_backups: 3
+
+scara:
+  height_px: 480
+  width_px: 640
+  height_mm: 240
+  width_mm: 320
+  dx: -100
+  dy: 50

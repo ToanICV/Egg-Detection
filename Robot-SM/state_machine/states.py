@@ -160,6 +160,7 @@ class ScanAndMoveState(BaseState):
                 e for e in eggs
                 if (e.get("y_norm", 0.0) > y_min) and (x_min < e.get("x_norm", 0.0) < x_max)
             ]
+            print(f"candidates: {candidates}")
             if candidates:
                 ctx.cmd_base_stop()
                 return PickUpEggState(target=candidates[0])
@@ -189,9 +190,22 @@ class PickUpEggState(BaseState):
     def enter(self, ctx: Context) -> None:
         """Gửi lệnh nhặt tại (x_mm, y_mm) và bật polling trạng thái arm."""
         super().enter(ctx)
-        x = int(self.target.get("x_mm", 0) if self.target else 0)
-        y = int(self.target.get("y_mm", 0) if self.target else 0)
-        ctx.cmd_arm_pick(x, y)
+
+        scara = getattr(ctx, "scara", {}) or {}
+        height_px = float(scara.get("height_px", 480))
+        width_px = float(scara.get("width_px", 640))
+        height_mm = float(scara.get("height_mm", 240))
+        width_mm = float(scara.get("width_mm", 320))
+        dx = float(scara.get("dx", 100))
+        dy = float(scara.get("width_mm", 50))
+
+        x_px = int(self.target.get("x_px", 0) if self.target else 0)
+        y_px = int(self.target.get("y_px", 0) if self.target else 0)
+
+        x_mm = int((width_mm / width_px) * x_px + dx)
+        y_mm = int((height_mm / height_px) * y_px + dy)
+
+        ctx.cmd_arm_pick(x_mm, y_mm)
         ctx.set_polling("arm_state", True, interval_s=1.0)
 
     def handle(self, ctx: Context, event: Event) -> Optional[BaseState]:
