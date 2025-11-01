@@ -186,6 +186,7 @@ class SerialComm:
             # payload: [moving_flag, obstacle_cm]
             if len(payload) >= 2:
                 info["moving"] = bool(payload[0])
+                print(f"Debug: Actor moving: {info['moving']}")
                 info["obstacle_cm"] = int(payload[1])
         elif src == 0x06 and typ == 0x04:  # Arm ACK
             # payload: 0xFF 0xFF

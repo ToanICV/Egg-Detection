@@ -68,6 +68,8 @@ class SimpleSerialSimulator:
         actor_state_row.pack(fill="x", pady=5)
         tk.Button(actor_state_row, text="ACK state (no obstacle)", command=lambda: self.send_data("ACTOR_STATE_CLEAR", b'\x24\x24\x05\x03\x01\x64\xB5\x23\x23')).pack(side=tk.LEFT, padx=5)
         tk.Button(actor_state_row, text="ACK state (get obstacle)", command=lambda: self.send_data("ACTOR_STATE_OBSTACLE", b'\x24\x24\x05\x03\x01\x10\x61\x23\x23')).pack(side=tk.LEFT, padx=5)
+        # Theo yêu cầu: nút ACK state (idle) của ACTOR, với payload đã chỉ định
+        tk.Button(actor_state_row, text="ACK state (idle)", command=lambda: self.send_data("ACTOR_STATE_IDLE", b'\x24\x24\x05\x03\x00\x10\x60\x23\x23')).pack(side=tk.LEFT, padx=5)
         
         # Custom send frame
         custom_frame = tk.LabelFrame(self.root, text="Custom Command", padx=5, pady=5)
@@ -142,7 +144,7 @@ class SimpleSerialSimulator:
                 self.disconnect_serial()
                 
             self.serial_port = serial.Serial(
-                port='COM21',
+                port='COM15',
                 baudrate=115200,
                 timeout=1.0
             )
@@ -225,52 +227,89 @@ class SimpleSerialSimulator:
         """Process and display received data."""
         hex_data = ' '.join(f'{b:02X}' for b in data)
         self.log(f"📥 RX: {hex_data} ({len(data)} bytes)")
-        
-        # Try to parse as protocol frame
-        if len(data) >= 7 and data[0:2] == b'\x24\x24':
-            self.parse_protocol_frame(data)
-        
-        # Try to decode as ASCII text
+
+        # Tách và parse từng frame theo giao thức $$ ... ##
+        for frame in self._iter_frames(data):
+            self.parse_protocol_frame(frame)
+
+        # Thử decode ASCII (không ảnh hưởng đến giao thức)
         try:
             text = data.decode('utf-8', errors='ignore').strip()
             if text and all(c.isprintable() or c.isspace() for c in text):
                 self.log(f"📝 ASCII: '{text}'")
-        except:
+        except Exception:
             pass
-    
-    def parse_protocol_frame(self, data):
-        """Parse protocol frame and show details."""
+
+    def _iter_frames(self, data: bytes):
+        """Yield all protocol frames delimited by header '$$' and footer '##'."""
+        i = 0
+        n = len(data)
+        while i + 3 < n:
+            # tìm header
+            if i + 1 < n and data[i] == 0x24 and data[i + 1] == 0x24:
+                # tìm footer tiếp theo
+                j = i + 2
+                while j + 1 < n:
+                    if data[j] == 0x23 and data[j + 1] == 0x23:
+                        yield data[i : j + 2]
+                        i = j + 2
+                        break
+                    j += 1
+                else:
+                    # không tìm thấy footer, dừng
+                    break
+            else:
+                i += 1
+
+    def _crc_ok(self, frame: bytes) -> bool:
+        if len(frame) < 5:
+            return False
+        calc = sum(frame[:-3]) & 0xFF
+        return calc == frame[-3]
+
+    def parse_protocol_frame(self, frame: bytes):
+        """Parse protocol frame and show details (theo docs/protocols.md)."""
         try:
-            if len(data) < 7:
+            if len(frame) < 7:
                 return
-                
-            header = data[0:2]
-            length = data[2]
-            group = data[3]
-            payload = data[4:-3] if len(data) > 7 else b''
-            crc = data[-3]
-            footer = data[-2:]
-            
-            frame_info = f"📋 Frame: Header={header.hex()}, Len={length}, Group=0x{group:02X}, Payload={payload.hex()}, CRC=0x{crc:02X}, Footer={footer.hex()}"
-            self.log(frame_info)
-            
-            # Interpret command
-            if group == 0x04:  # Command
-                if len(payload) > 0:
-                    cmd = payload[0]
-                    cmd_names = {
-                        0x01: "MOVE_FORWARD",
-                        0x02: "MOVE_BACKWARD", 
-                        0x03: "STOP",
-                        0x04: "TURN_90",
-                        0x05: "READ_STATUS",
-                        0xFF: "ACK"
-                    }
-                    cmd_name = cmd_names.get(cmd, f"UNKNOWN_0x{cmd:02X}")
-                    self.log(f"🎯 Command: {cmd_name}")
-            elif group == 0x03:  # Status
-                self.log(f"📊 Status data received")
-                
+            header = frame[0:2]
+            src = frame[2]   # 0x05 Actor, 0x06 Arm
+            typ = frame[3]   # 0x04 Command/ACK, 0x03 State
+            payload = frame[4:-3] if len(frame) > 7 else b''
+            crc = frame[-3]
+            footer = frame[-2:]
+            crc_ok = self._crc_ok(frame)
+
+            src_name = {0x05: 'ACTOR', 0x06: 'ARM'}.get(src, f'0x{src:02X}')
+            typ_name = {0x04: 'CMD/ACK', 0x03: 'STATE'}.get(typ, f'0x{typ:02X}')
+            self.log(f"📋 Frame: src={src_name}, type={typ_name}, payload={payload.hex().upper()}, CRC=0x{crc:02X} ({'OK' if crc_ok else 'BAD'}), footer={footer.hex().upper()}")
+
+            # Giải mã lệnh PC -> Actor
+            if src == 0x05 and typ == 0x04 and len(payload) >= 1:
+                cmd = payload[0]
+                cmd_map = {
+                    0x01: 'MOVE_FORWARD',
+                    0x02: 'MOVE_BACKWARD',
+                    0x03: 'STOP',
+                    0x04: 'TURN_90',
+                }
+                name = cmd_map.get(cmd, f'UNKNOWN_0x{cmd:02X}')
+                self.log(f"🎯 PC→Actor Command: {name}")
+
+            # Giải mã đọc trạng thái 1 PC -> Actor
+            if src == 0x05 and typ == 0x03 and len(payload) >= 1 and payload[0] == 0x05:
+                self.log("🎯 PC→Actor Command: READ_STATE_1")
+
+            # Giải mã lệnh PC -> Arm (pick up)
+            if src == 0x06 and typ == 0x04 and len(payload) >= 4:
+                x = int.from_bytes(payload[0:2], byteorder='big', signed=True)
+                y = int.from_bytes(payload[2:4], byteorder='big', signed=True)
+                self.log(f"🎯 PC→Arm Command: PICK_UP(x={x}, y={y})")
+
+            # Giải mã đọc trạng thái 2 PC -> Arm
+            if src == 0x06 and typ == 0x03 and len(payload) >= 1 and payload[0] == 0x51:
+                self.log("🎯 PC→Arm Command: READ_STATE_2")
+
         except Exception as e:
             self.log(f"❌ Frame parse error: {e}")
             

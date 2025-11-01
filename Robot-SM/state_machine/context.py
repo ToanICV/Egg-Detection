@@ -36,11 +36,14 @@ class RobotContext:
     """
 
     def __init__(self, controller: StateController, logger: Optional[logging.Logger] = None,
-                 port: str = "COM14", baudrate: int = 9600):
+                 port: str = "COM14", baudrate: int = 115200):
         self._controller = controller
         self._logger = logger or logging.getLogger("robot_sm.context")
         self.last_detections = []  # list[dict]
         self.obstacle_cm: Optional[float] = None
+        # Trạng thái gần nhất để overlay
+        self.last_base_state: Optional[str] = "unknown"
+        self.last_arm_state: Optional[str] = "unknown"
         # Serial
         self.comm = SerialComm(port, baudrate)
         # Quản lý timers và polling
@@ -129,11 +132,17 @@ class RobotContext:
             self.logger.debug("POLL START: base_state every %.2fs", interval_s)
             while not stop_evt.is_set():
                 if self.cmd_base_read_state():
-                    parsed = self.comm.read_parsed(timeout_s=0.5)
+                    parsed = self.comm.read_parsed(timeout_s=1)
                     if parsed and parsed.get("source") == "actor" and parsed.get("type") == "state":
                         moving = bool(parsed.get("moving", False))
+                        print(f"Debug: moving: {moving}")
                         self.obstacle_cm = parsed.get("obstacle_cm", None)
+                        self._controller.dispatch(Event(type="obstacle_dist", payload=self.obstacle_cm))
+                        
                         payload = "turning" if moving else "stopped"
+                        print("Parsed base state:", payload)
+                        # Lưu trạng thái actor/base gần nhất
+                        self.last_base_state = payload
                         self._controller.dispatch(Event(type="base_state", payload=payload))
                 stop_evt.wait(interval_s)
 
@@ -141,10 +150,12 @@ class RobotContext:
             self.logger.debug("POLL START: arm_state every %.2fs", interval_s)
             while not stop_evt.is_set():
                 if self.cmd_arm_read_state():
-                    parsed = self.comm.read_parsed(timeout_s=0.5)
+                    parsed = self.comm.read_parsed(timeout_s=1)
                     if parsed and parsed.get("source") == "arm" and parsed.get("type") == "state":
                         busy = bool(parsed.get("arm_busy", False))
-                        self._controller.dispatch(Event(type="arm_state", payload=("busy" if busy else "done")))
+                        # Lưu trạng thái arm gần nhất
+                        self.last_arm_state = "busy" if busy else "done"
+                        self._controller.dispatch(Event(type="arm_state", payload=self.last_arm_state))
                 stop_evt.wait(interval_s)
 
         loops: Dict[str, Callable[[], None]] = {
@@ -159,13 +170,5 @@ class RobotContext:
         th = threading.Thread(target=loop_fn, name=key, daemon=True)
         th.start()
 
-    # ---- Helper for demo ----
-    def simulate_eggs_detected(self, eggs):
-        """Phát sự kiện eggs_detected để kích hoạt luồng PickUp."""
-        self.last_detections = eggs or []
-        self._controller.dispatch(Event(type="eggs_detected", payload=self.last_detections))
-
-    def simulate_obstacle_close(self, distance_cm: float):
-        self.obstacle_cm = distance_cm
-        if distance_cm < 30:
-            self._controller.dispatch(Event(type="obstacle_too_close", payload=distance_cm))
+    def update_detections(self, det_list: list[dict]) -> None:
+        self.last_detections = det_list

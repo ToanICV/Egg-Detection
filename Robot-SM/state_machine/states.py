@@ -150,11 +150,13 @@ class ScanAndMoveState(BaseState):
         """
         if event.type == "eggs_detected":
             eggs = event.payload or []
-            centered = [e for e in eggs if e.get("y_norm", 0.0) >= 0.25 and e.get("y_norm", 1.0) <= 0.75]
+            ctx.last_detections = eggs
+            centered = [e for e in eggs if e.get("y_norm", 0.0) >= 0.25 and e.get("y_norm", 1.0) <= 1]
             if centered:
                 ctx.cmd_base_stop()
                 return PickUpEggState(target=centered[0])
-        if event.type == "obstacle_too_close":
+            
+        if event.type == "obstacle_dist" and ctx.last_detections == []:
             ctx.cmd_base_stop()
             ctx.cmd_base_turn90()
             return TurnFirstState()
@@ -206,15 +208,17 @@ class TurnFirstState(BaseState):
         """Bật polling base_state và đặt timer timeout 10s cho thao tác quay."""
         super().enter(ctx)
         ctx.set_polling("base_state", True, interval_s=1.0)
-        ctx.start_timer("turn1_timeout", 10.0)
+        ctx.start_timer("turn1_timeout", 10.0)  # Dùng để giả lập tự động
 
     def handle(self, ctx: Context, event: Event) -> Optional[BaseState]:
         """Khi base dừng → sang ScanOnly; quá thời gian → cũng sang ScanOnly."""
         if event.type == "base_state":
             state = event.payload
             if state == "stopped":
+                print("Chuyển sang ScanOnly do Base đã dừng")
                 return ScanOnlyState()
         if event.type == "timer" and event.payload == "turn1_timeout":
+            print("Chuyển sang ScanOnly do timeout của TurnFirstState")
             return ScanOnlyState()
         return super().handle(ctx, event)
 
@@ -282,15 +286,17 @@ class TurnSecondState(BaseState):
         """Bật polling base_state và đặt timer 10s cho thao tác quay."""
         super().enter(ctx)
         ctx.set_polling("base_state", True, interval_s=1.0)
-        ctx.start_timer("turn2_timeout", 10.0)
+        ctx.start_timer("turn2_timeout", 10.0)  # Dùng để giả lập tự động
 
     def handle(self, ctx: Context, event: Event) -> Optional[BaseState]:
         """Base dừng hoặc quá thời gian → quay lại ScanAndMove."""
         if event.type == "base_state":
             state = event.payload
             if state == "stopped":
+                print("Chuyển sang ScanAndMove do Base đã dừng")
                 return ScanAndMoveState()
         if event.type == "timer" and event.payload == "turn2_timeout":
+            print("Chuyển sang ScanAndMove do timeout của TurnSecondState")
             return ScanAndMoveState()
         return super().handle(ctx, event)
 

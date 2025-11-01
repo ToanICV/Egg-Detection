@@ -21,11 +21,16 @@ class YoloRunner:
     - class_name: nếu đặt, chỉ vẽ các bbox có nhãn trùng tên này
     - window_name: tên cửa sổ hiển thị
     - on_detections: callback(list[dict]) nhận danh sách phát hiện mỗi khung hình
+    - status_provider: callable() -> str, trả về trạng thái hiện tại để overlay lên khung hình
+    - info_provider: callable() -> dict, trả về thông tin bổ sung để overlay (ví dụ {'dist': cm, 'eggs': n})
     - yolo_params: dict các tham số (imgsz, conf, iou, device, max_det, half)
     """
 
     def __init__(self, model_path: str, class_name: Optional[str], window_name: str,
-                 on_detections: Optional[callable] = None, **yolo_params) -> None:
+                 on_detections: Optional[callable] = None,
+                 status_provider: Optional[callable] = None,
+                 info_provider: Optional[callable] = None,
+                 **yolo_params) -> None:
         # Chuẩn hóa device và half để tránh lỗi khi không có CUDA
         import torch
 
@@ -53,6 +58,8 @@ class YoloRunner:
         self._class_name = class_name
         self._window = window_name
         self._on_detections = on_detections
+        self._status_provider = status_provider
+        self._info_provider = info_provider
         self._params = yolo_params
         self._fps_avg: Optional[float] = None
 
@@ -91,11 +98,16 @@ class YoloRunner:
                 })
 
         # Nếu có callback detections, gọi để phát sự kiện cho FSM
-        if self._on_detections is not None:
-            try:
-                self._on_detections(det_list)
-            except Exception:
-                pass
+        if (self._on_detections is not None):
+            now = time.time()
+            last = getattr(self, "_last_detections_ts", 0.0)
+            if now - last >= 1.0:
+                try:
+                    self._last_detections_ts = now
+                    self._on_detections(det_list)
+
+                except Exception:
+                    pass
 
         # Vẽ lại nếu cần lọc theo class_name
         if self._class_name is not None and hasattr(result, "boxes") and result.boxes is not None:
@@ -108,10 +120,35 @@ class YoloRunner:
                 cv2.putText(filtered, f"{label} {conf:.2f}", (int(x1), max(0, int(y1) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
             canvas = filtered
 
+        # Overlay trạng thái FSM nếu có
+        y = 30
+        cv2.putText(canvas, f"FPS: {self._fps_avg:.1f}" if self._fps_avg is not None else "FPS: --", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (50, 220, 50), 2, cv2.LINE_AA)
+        y += 30
+        if self._status_provider is not None:
+            try:
+                status = str(self._status_provider() or "")
+            except Exception:
+                status = ""
+            if status:
+                cv2.putText(canvas, f"STATE: {status}", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+                y += 30
+        if self._info_provider is not None:
+            try:
+                info = self._info_provider() or {}
+            except Exception:
+                info = {}
+            dist = info.get("dist")
+            eggs = len(det_list)
+            if dist is not None:
+                cv2.putText(canvas, f"Dist: {dist} cm", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 200, 0), 2, cv2.LINE_AA)
+                y += 30
+            if eggs is not None:
+                cv2.putText(canvas, f"Eggs: {eggs}", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2, cv2.LINE_AA)
+                y += 30
+
         dt = time.perf_counter() - t0
         fps = 1.0 / dt if dt > 0 else 0.0
         self._fps_avg = fps if self._fps_avg is None else self._fps_avg * 0.9 + fps * 0.1
-        cv2.putText(canvas, f"FPS: {self._fps_avg:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 220, 50), 2, cv2.LINE_AA)
         return canvas
 
     def run_loop(self, frame_queue: "queue.Queue[np.ndarray]") -> None:
