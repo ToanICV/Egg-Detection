@@ -130,7 +130,7 @@ class YoloRunner:
             except Exception:
                 status = ""
             if status:
-                cv2.putText(canvas, f"STATE: {status}", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(canvas, f"State: {status}", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
                 y += 30
         if self._info_provider is not None:
             try:
